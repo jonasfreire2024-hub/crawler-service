@@ -3,8 +3,8 @@ FROM ghcr.io/puppeteer/puppeteer:21.6.1
 WORKDIR /app
 
 # Copiar arquivos
-COPY package*.json ./
-RUN npm ci --only=production
+COPY package.json ./
+RUN npm install --omit=dev
 
 COPY . .
 
