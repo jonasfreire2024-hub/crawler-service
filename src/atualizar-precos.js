@@ -34,14 +34,39 @@ async function atualizarPrecos({ concorrenteId, tenantId, supabaseUrl, supabaseK
 
     console.log(`📦 ${produtos.length} produtos encontrados`)
     console.log('🌐 Iniciando Puppeteer...')
-
-    browser = await puppeteer.launch({
-      headless: 'new',
-      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium-browser',
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--single-process']
-    })
     
-    console.log('✅ Puppeteer iniciado com sucesso')
+    // Tentar múltiplos caminhos do Chromium
+    const chromiumPaths = [
+      process.env.PUPPETEER_EXECUTABLE_PATH,
+      '/nix/var/nix/profiles/default/bin/chromium',
+      '/usr/bin/chromium',
+      '/usr/bin/chromium-browser',
+      '/usr/bin/google-chrome',
+      '/usr/bin/google-chrome-stable'
+    ].filter(Boolean)
+    
+    console.log('Tentando caminhos:', chromiumPaths)
+
+    let launchError = null
+    for (const execPath of chromiumPaths) {
+      try {
+        console.log(`Tentando: ${execPath}`)
+        browser = await puppeteer.launch({
+          headless: 'new',
+          executablePath: execPath,
+          args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--single-process', '--disable-gpu']
+        })
+        console.log(`✅ Puppeteer iniciado com: ${execPath}`)
+        break
+      } catch (err) {
+        console.log(`❌ Falhou: ${execPath} - ${err.message}`)
+        launchError = err
+      }
+    }
+    
+    if (!browser) {
+      throw launchError || new Error('Não foi possível iniciar o Chromium')
+    }
 
     const page = await browser.newPage()
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36')
