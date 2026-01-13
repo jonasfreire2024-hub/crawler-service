@@ -1,23 +1,21 @@
-FROM ghcr.io/puppeteer/puppeteer:latest
+FROM node:20-slim
+
+# Instalar dependências do Chromium
+RUN apt-get update && apt-get install -y \
+    chromium \
+    --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Copiar package.json primeiro para cache de dependências
 COPY package*.json ./
-
-# Instalar dependências (Puppeteer já vem com Chromium nesta imagem)
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 RUN npm install --omit=dev
 
-# Copiar código fonte
 COPY src ./src
 
-# Expor porta
-EXPOSE 8080
-
-# Variáveis de ambiente
 ENV PORT=8080
-ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome-stable
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
-# Iniciar aplicação
+EXPOSE 8080
 CMD ["node", "src/index.js"]
