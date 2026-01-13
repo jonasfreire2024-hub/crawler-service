@@ -15,10 +15,10 @@ async function atualizarPrecos({ concorrenteId, tenantId, supabaseUrl, supabaseK
   try {
     console.log('🔄 Buscando produtos no banco...')
 
-    // Buscar produtos já cadastrados deste concorrente
+    // Buscar produtos já cadastrados deste concorrente (com estoque anterior)
     const { data: produtos, error } = await supabase
       .from('ag_concorrentes_produtos')
-      .select('id, url, nome, preco')
+      .select('id, url, nome, preco, estoque, preco_anterior, estoque_anterior')
       .eq('concorrente_id', concorrenteId)
       .eq('ativo', true)
 
@@ -90,6 +90,7 @@ async function atualizarPrecos({ concorrenteId, tenantId, supabaseUrl, supabaseK
     let atualizados = 0
     let erros = 0
     const historico = []
+    const movimentacoes = []
 
     for (let i = 0; i < produtos.length; i++) {
       const produto = produtos[i]
@@ -154,28 +155,66 @@ async function atualizarPrecos({ concorrenteId, tenantId, supabaseUrl, supabaseK
 
         // Só atualiza se encontrou preço
         if (dados.preco > 0) {
-          const precoAnterior = produto.preco
+          const precoAnterior = produto.preco || 0
+          const estoqueAnterior = produto.estoque ? parseInt(produto.estoque) : null
+          const estoqueAtual = dados.estoque ? parseInt(dados.estoque) : null
 
           // Atualizar produto
           await supabase
             .from('ag_concorrentes_produtos')
             .update({
               preco: dados.preco,
+              preco_anterior: precoAnterior,
               estoque: dados.estoque,
+              estoque_anterior: estoqueAnterior,
               disponibilidade: dados.disponivel ? 'disponível' : 'indisponível',
+              ultima_coleta: new Date().toISOString(),
               updated_at: new Date().toISOString()
             })
             .eq('id', produto.id)
 
-          // Registrar histórico se preço mudou
+          // Calcular variações
+          const variacaoPreco = precoAnterior ? dados.preco - precoAnterior : 0
+          const variacaoPrecoPercent = precoAnterior ? ((dados.preco - precoAnterior) / precoAnterior * 100) : 0
+          const variacaoEstoque = (estoqueAnterior !== null && estoqueAtual !== null) ? estoqueAtual - estoqueAnterior : null
+
+          // Determinar tipo de movimento
+          let tipoMovimento = null
+          if (variacaoEstoque !== null && variacaoEstoque < 0) tipoMovimento = 'venda'
+          else if (variacaoEstoque !== null && variacaoEstoque > 0) tipoMovimento = 'compra'
+          else if (variacaoPreco > 0) tipoMovimento = 'aumento_preco'
+          else if (variacaoPreco < 0) tipoMovimento = 'reducao_preco'
+          else if (!dados.disponivel && produto.disponibilidade !== 'indisponível') tipoMovimento = 'esgotado'
+          else if (dados.disponivel && produto.disponibilidade === 'indisponível') tipoMovimento = 'reabastecido'
+
+          // Registrar movimentação (sempre, para ter histórico completo)
+          if (precoAnterior || estoqueAnterior !== null) {
+            movimentacoes.push({
+              tenant_id: tenantId,
+              produto_concorrente_id: produto.id,
+              concorrente_id: concorrenteId,
+              preco_atual: dados.preco,
+              preco_anterior: precoAnterior,
+              estoque_atual: estoqueAtual,
+              estoque_anterior: estoqueAnterior,
+              disponivel: dados.disponivel,
+              variacao_preco: variacaoPreco,
+              variacao_preco_percent: variacaoPrecoPercent.toFixed(2),
+              variacao_estoque: variacaoEstoque,
+              tipo_movimento: tipoMovimento,
+              coletado_em: new Date().toISOString()
+            })
+          }
+
+          // Registrar histórico de preços se preço mudou
           if (precoAnterior && precoAnterior !== dados.preco) {
             historico.push({
-              produto_id: produto.id,
-              concorrente_id: concorrenteId,
+              produto_concorrente_id: produto.id,
               tenant_id: tenantId,
               preco_anterior: precoAnterior,
-              preco_novo: dados.preco,
-              variacao: ((dados.preco - precoAnterior) / precoAnterior * 100).toFixed(2)
+              preco: dados.preco,
+              disponivel: dados.disponivel,
+              data_coleta: new Date().toISOString()
             })
           }
 
@@ -194,10 +233,24 @@ async function atualizarPrecos({ concorrenteId, tenantId, supabaseUrl, supabaseK
 
     await browser.close()
 
+    // Salvar movimentações (para análise de vendas/compras)
+    if (movimentacoes.length > 0) {
+      const { error: movError } = await supabase.from('ag_concorrentes_movimentacoes').insert(movimentacoes)
+      if (movError) {
+        console.error('❌ Erro ao salvar movimentações:', movError.message)
+      } else {
+        console.log(`📊 ${movimentacoes.length} movimentações registradas`)
+      }
+    }
+
     // Salvar histórico de preços
     if (historico.length > 0) {
-      await supabase.from('ag_concorrentes_historico_precos').insert(historico)
-      console.log(`📈 ${historico.length} alterações de preço registradas`)
+      const { error: histError } = await supabase.from('ag_concorrentes_historico_precos').insert(historico)
+      if (histError) {
+        console.error('❌ Erro ao salvar histórico:', histError.message)
+      } else {
+        console.log(`📈 ${historico.length} alterações de preço registradas`)
+      }
     }
 
     // Registrar log
@@ -214,12 +267,13 @@ async function atualizarPrecos({ concorrenteId, tenantId, supabaseUrl, supabaseK
       console.log('📝 Log salvo com sucesso')
     }
 
-    console.log(`✅ Atualização concluída: ${atualizados} produtos, ${historico.length} mudanças de preço`)
+    console.log(`✅ Atualização concluída: ${atualizados} produtos, ${movimentacoes.length} movimentações, ${historico.length} mudanças de preço`)
     
     return { 
       success: true, 
       total: atualizados, 
       erros,
+      movimentacoes: movimentacoes.length,
       mudancasPreco: historico.length
     }
 
