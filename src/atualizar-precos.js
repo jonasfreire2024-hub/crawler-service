@@ -156,12 +156,18 @@ async function atualizarPrecos({ concorrenteId, tenantId, supabaseUrl, supabaseK
     }
 
     // Registrar log
-    await supabase.from('ag_concorrentes_logs').insert({
+    const logResult = await supabase.from('ag_concorrentes_logs').insert({
       concorrente_id: concorrenteId,
       tenant_id: tenantId,
       tipo: 'atualizar_precos',
       descricao: `${atualizados} atualizados, ${erros} erros, ${historico.length} mudanças de preço`
     })
+    
+    if (logResult.error) {
+      console.error('❌ Erro ao salvar log:', logResult.error)
+    } else {
+      console.log('📝 Log salvo com sucesso')
+    }
 
     console.log(`✅ Atualização concluída: ${atualizados} produtos, ${historico.length} mudanças de preço`)
     
