@@ -2,11 +2,18 @@ const puppeteer = require('puppeteer')
 const { createClient } = require('@supabase/supabase-js')
 
 async function atualizarPrecos({ concorrenteId, tenantId, supabaseUrl, supabaseKey }) {
+  console.log('========================================')
+  console.log('🚀 INICIANDO ATUALIZAR PREÇOS')
+  console.log('Concorrente:', concorrenteId)
+  console.log('Tenant:', tenantId)
+  console.log('Supabase URL:', supabaseUrl ? 'OK' : 'MISSING')
+  console.log('========================================')
+  
   const supabase = createClient(supabaseUrl, supabaseKey)
   let browser = null
 
   try {
-    console.log('🔄 Iniciando atualização de preços para concorrente:', concorrenteId)
+    console.log('🔄 Buscando produtos no banco...')
 
     // Buscar produtos já cadastrados deste concorrente
     const { data: produtos, error } = await supabase
@@ -15,19 +22,26 @@ async function atualizarPrecos({ concorrenteId, tenantId, supabaseUrl, supabaseK
       .eq('concorrente_id', concorrenteId)
       .eq('ativo', true)
 
-    if (error) throw error
+    if (error) {
+      console.error('❌ Erro ao buscar produtos:', error)
+      throw error
+    }
+    
     if (!produtos || produtos.length === 0) {
       console.log('⚠️ Nenhum produto cadastrado para atualizar')
       return { success: true, total: 0, message: 'Nenhum produto para atualizar' }
     }
 
-    console.log(`📦 ${produtos.length} produtos para atualizar`)
+    console.log(`📦 ${produtos.length} produtos encontrados`)
+    console.log('🌐 Iniciando Puppeteer...')
 
     browser = await puppeteer.launch({
       headless: 'new',
       executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium-browser',
       args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--single-process']
     })
+    
+    console.log('✅ Puppeteer iniciado com sucesso')
 
     const page = await browser.newPage()
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36')
@@ -179,7 +193,11 @@ async function atualizarPrecos({ concorrenteId, tenantId, supabaseUrl, supabaseK
     }
 
   } catch (error) {
-    console.error('❌ Erro:', error)
+    console.error('========================================')
+    console.error('❌ ERRO NO CRAWLER:')
+    console.error('Mensagem:', error.message)
+    console.error('Stack:', error.stack)
+    console.error('========================================')
     if (browser) await browser.close()
     throw error
   }
