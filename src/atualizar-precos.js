@@ -89,14 +89,25 @@ async function atualizarPrecos({ concorrenteId, tenantId, supabaseUrl, supabaseK
 
     let atualizados = 0
     let erros = 0
+    let inativos = 0
     const historico = []
     const movimentacoes = []
+    const produtosInativados = []
 
     for (let i = 0; i < produtos.length; i++) {
       const produto = produtos[i]
       
       try {
-        await page.goto(produto.url, { waitUntil: 'domcontentloaded', timeout: 15000 })
+        const response = await page.goto(produto.url, { waitUntil: 'domcontentloaded', timeout: 15000 })
+        
+        // Se página retornou 404 ou erro, marcar como inativo
+        if (!response || response.status() === 404 || response.status() >= 400) {
+          console.log(`   ❌ ${produto.nome}: Página não encontrada (${response?.status() || 'sem resposta'})`)
+          produtosInativados.push(produto.id)
+          inativos++
+          continue
+        }
+        
         await new Promise(r => setTimeout(r, 500))
 
         // Extrair preço e estoque - USANDO MESMA LÓGICA DO BOTÃO ATUALIZAR
@@ -272,6 +283,45 @@ async function atualizarPrecos({ concorrenteId, tenantId, supabaseUrl, supabaseK
 
     await browser.close()
 
+    // Inativar produtos que retornaram 404
+    if (produtosInativados.length > 0) {
+      const { error: inativoError } = await supabase
+        .from('ag_concorrentes_produtos')
+        .update({ 
+          ativo: false, 
+          disponibilidade: 'removido',
+          updated_at: new Date().toISOString()
+        })
+        .in('id', produtosInativados)
+      
+      if (inativoError) {
+        console.error('❌ Erro ao inativar produtos:', inativoError.message)
+      } else {
+        console.log(`🗑️ ${produtosInativados.length} produtos inativados (página não encontrada)`)
+      }
+    }
+
+    // Inativar produtos que não foram atualizados há mais de 7 dias
+    const seteDiasAtras = new Date()
+    seteDiasAtras.setDate(seteDiasAtras.getDate() - 7)
+    
+    const { data: produtosAntigos, error: antigosError } = await supabase
+      .from('ag_concorrentes_produtos')
+      .update({ 
+        ativo: false, 
+        disponibilidade: 'desatualizado',
+        updated_at: new Date().toISOString()
+      })
+      .eq('concorrente_id', concorrenteId)
+      .eq('ativo', true)
+      .lt('ultima_coleta', seteDiasAtras.toISOString())
+      .select('id')
+    
+    const produtosDesatualizados = produtosAntigos?.length || 0
+    if (produtosDesatualizados > 0) {
+      console.log(`⏰ ${produtosDesatualizados} produtos inativados (sem atualização há 7+ dias)`)
+    }
+
     // Salvar movimentações (para análise de vendas/compras)
     if (movimentacoes.length > 0) {
       const { error: movError } = await supabase.from('ag_concorrentes_movimentacoes').insert(movimentacoes)
@@ -297,7 +347,7 @@ async function atualizarPrecos({ concorrenteId, tenantId, supabaseUrl, supabaseK
       concorrente_id: concorrenteId,
       tenant_id: tenantId,
       tipo: 'atualizar_precos',
-      descricao: `${atualizados} atualizados, ${erros} erros, ${historico.length} mudanças de preço`
+      descricao: `${atualizados} atualizados, ${erros} erros, ${inativos} inativados (404), ${produtosDesatualizados} desatualizados, ${historico.length} mudanças de preço`
     })
     
     if (logResult.error) {
@@ -306,12 +356,13 @@ async function atualizarPrecos({ concorrenteId, tenantId, supabaseUrl, supabaseK
       console.log('📝 Log salvo com sucesso')
     }
 
-    console.log(`✅ Atualização concluída: ${atualizados} produtos, ${movimentacoes.length} movimentações, ${historico.length} mudanças de preço`)
+    console.log(`✅ Atualização concluída: ${atualizados} produtos, ${inativos + produtosDesatualizados} inativados, ${movimentacoes.length} movimentações, ${historico.length} mudanças de preço`)
     
     return { 
       success: true, 
       total: atualizados, 
       erros,
+      inativos: inativos + produtosDesatualizados,
       movimentacoes: movimentacoes.length,
       mudancasPreco: historico.length
     }

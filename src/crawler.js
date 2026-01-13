@@ -344,11 +344,11 @@ async function crawlerCompleto({ concorrenteId, urlBase, tenantId, supabaseUrl, 
           pagina++
         }
 
-        // Salvar a cada categoria
+        // Salvar a cada categoria - usando UPSERT para evitar duplicatas
         if (produtosDaCategoria.length > 0) {
           const { error } = await supabase
             .from('ag_concorrentes_produtos')
-            .insert(
+            .upsert(
               produtosDaCategoria.map(p => ({
                 tenant_id: tenantId,
                 concorrente_id: concorrenteId,
@@ -366,12 +366,15 @@ async function crawlerCompleto({ concorrenteId, urlBase, tenantId, supabaseUrl, 
                 estoque: p.estoque,
                 ativo: true,
                 ultima_coleta: new Date().toISOString()
-              }))
+              })),
+              { onConflict: 'url', ignoreDuplicates: false }
             )
 
           if (!error) {
             totalSalvos += produtosDaCategoria.length
-            console.log(`   💾 ${totalSalvos} produtos salvos`)
+            console.log(`   💾 ${totalSalvos} produtos salvos/atualizados`)
+          } else {
+            console.error(`   ❌ Erro ao salvar: ${error.message}`)
           }
         }
 
