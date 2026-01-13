@@ -119,6 +119,25 @@ async function atualizarPrecos({ concorrenteId, tenantId, supabaseUrl, supabaseK
           // Buscar apenas na área do produto principal (como faz o botão)
           const areaProduto = document.querySelector('.product-details-content, article[itemtype*="Product"]')
           
+          // 1. PRIMEIRO: Tentar meta tag (mais confiável - funciona mesmo com preço oculto)
+          const metaPrice = document.querySelector('meta[itemprop="price"]')
+          if (metaPrice && metaPrice.content) {
+            const valor = parseFloat(metaPrice.content)
+            if (valor > 0) preco = valor
+          }
+          
+          // 2. Tentar data-element="price" (Rufer usa isso, mesmo com display:none)
+          if (preco === 0) {
+            const dataPrice = document.querySelector('[data-element="price"]')
+            if (dataPrice) {
+              const texto = dataPrice.textContent || dataPrice.getAttribute('content') || ''
+              const match = texto.match(/R?\$?\s*([0-9]{1,3}(?:\.?[0-9]{3})*(?:,[0-9]{2})?)/)
+              if (match) {
+                preco = parseFloat(match[1].replace(/\./g, '').replace(',', '.'))
+              }
+            }
+          }
+          
           if (areaProduto) {
             // ===== PREÇOS - APENAS DO PRODUTO PRINCIPAL =====
             const areaPrecos = areaProduto.querySelector('.product-values, .product-price, .price-detail-fixed')
