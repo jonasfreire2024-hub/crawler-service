@@ -227,19 +227,31 @@ async function atualizarPrecos({ concorrenteId, tenantId, supabaseUrl, supabaseK
           const precoAnterior = produto.preco || 0
           const estoqueAnterior = produto.estoque ? parseInt(produto.estoque) : null
           const estoqueAtual = dados.estoque ? parseInt(dados.estoque) : null
+          
+          // Verificar se preço mudou (tolerância de 1 centavo)
+          const precoMudou = precoAnterior && Math.abs(precoAnterior - dados.preco) > 0.01
+          const agora = new Date().toISOString()
+
+          // Montar objeto de atualização
+          const dadosAtualizacao = {
+            preco: dados.preco,
+            preco_anterior: precoAnterior,
+            estoque: dados.estoque,
+            estoque_anterior: estoqueAnterior,
+            disponibilidade: dados.disponivel ? 'disponível' : 'indisponível',
+            ultima_coleta: agora, // Sempre atualiza - quando foi verificado
+            updated_at: agora
+          }
+          
+          // Se preço mudou, registrar a data da alteração
+          if (precoMudou) {
+            dadosAtualizacao.ultima_alteracao_preco = agora
+          }
 
           // Atualizar produto
           await supabase
             .from('ag_concorrentes_produtos')
-            .update({
-              preco: dados.preco,
-              preco_anterior: precoAnterior,
-              estoque: dados.estoque,
-              estoque_anterior: estoqueAnterior,
-              disponibilidade: dados.disponivel ? 'disponível' : 'indisponível',
-              ultima_coleta: new Date().toISOString(),
-              updated_at: new Date().toISOString()
-            })
+            .update(dadosAtualizacao)
             .eq('id', produto.id)
 
           // Calcular variações
@@ -256,8 +268,12 @@ async function atualizarPrecos({ concorrenteId, tenantId, supabaseUrl, supabaseK
           else if (!dados.disponivel && produto.disponibilidade !== 'indisponível') tipoMovimento = 'esgotado'
           else if (dados.disponivel && produto.disponibilidade === 'indisponível') tipoMovimento = 'reabastecido'
 
-          // Registrar movimentação (sempre, para ter histórico completo)
-          if (precoAnterior || estoqueAnterior !== null) {
+          // Registrar movimentação APENAS se houve mudança real
+          // Preço mudou OU estoque mudou OU disponibilidade mudou
+          const estoqueMudou = variacaoEstoque !== null && variacaoEstoque !== 0
+          const disponibilidadeMudou = tipoMovimento === 'esgotado' || tipoMovimento === 'reabastecido'
+          
+          if (precoMudou || estoqueMudou || disponibilidadeMudou) {
             movimentacoes.push({
               tenant_id: tenantId,
               produto_concorrente_id: produto.id,
@@ -271,19 +287,19 @@ async function atualizarPrecos({ concorrenteId, tenantId, supabaseUrl, supabaseK
               variacao_preco_percent: variacaoPrecoPercent.toFixed(2),
               variacao_estoque: variacaoEstoque,
               tipo_movimento: tipoMovimento,
-              coletado_em: new Date().toISOString()
+              coletado_em: agora
             })
           }
 
-          // Registrar histórico de preços se preço mudou
-          if (precoAnterior && precoAnterior !== dados.preco) {
+          // Registrar histórico de preços APENAS se preço realmente mudou
+          if (precoMudou) {
             historico.push({
               produto_concorrente_id: produto.id,
               tenant_id: tenantId,
               preco_anterior: precoAnterior,
               preco: dados.preco,
               disponivel: dados.disponivel,
-              data_coleta: new Date().toISOString()
+              data_coleta: agora
             })
           }
 
