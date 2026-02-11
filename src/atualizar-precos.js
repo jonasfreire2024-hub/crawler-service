@@ -263,8 +263,8 @@ async function atualizarPrecos({ concorrenteId, tenantId, supabaseUrl, supabaseK
           let tipoMovimento = null
           if (variacaoEstoque !== null && variacaoEstoque < 0) tipoMovimento = 'venda'
           else if (variacaoEstoque !== null && variacaoEstoque > 0) tipoMovimento = 'compra'
-          else if (variacaoPreco > 0) tipoMovimento = 'aumento_preco'
-          else if (variacaoPreco < 0) tipoMovimento = 'reducao_preco'
+          else if (precoMudou && variacaoPreco > 0) tipoMovimento = 'aumento_preco'
+          else if (precoMudou && variacaoPreco < 0) tipoMovimento = 'reducao_preco'
           else if (!dados.disponivel && produto.disponibilidade !== 'indisponível') tipoMovimento = 'esgotado'
           else if (dados.disponivel && produto.disponibilidade === 'indisponível') tipoMovimento = 'reabastecido'
 
