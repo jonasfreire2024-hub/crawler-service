@@ -183,20 +183,101 @@ async function crawlerCompleto({ concorrenteId, urlBase, tenantId, supabaseUrl, 
             break
           }
 
-          // Extrair URLs de produtos
-          const urlsProdutos = await page.evaluate(() => {
+          // Extrair URLs de produtos - DETECÇÃO AUTOMÁTICA POR SITE
+          const urlsProdutos = await page.evaluate((urlBase) => {
             const urls = new Set()
-            const regex = /href="([^"]*-p\d+)"/gi
-            let match
-            while ((match = regex.exec(document.documentElement.outerHTML)) !== null) {
-              let url = match[1]
-              if (!url.startsWith('http')) {
-                url = window.location.origin + (url.startsWith('/') ? '' : '/') + url
+            
+            // Detectar tipo de site
+            const isRufer = urlBase.includes('rufer') || urlBase.includes('rufermoveis')
+            const isLord = urlBase.includes('lord') || urlBase.includes('lorddistribuidor')
+            
+            if (isRufer) {
+              // RUFER: Usa padrão -p seguido de números
+              const regex = /href="([^"]*-p\d+[^"]*)"/gi
+              let match
+              while ((match = regex.exec(document.documentElement.outerHTML)) !== null) {
+                let url = match[1]
+                if (!url.startsWith('http')) {
+                  url = window.location.origin + (url.startsWith('/') ? '' : '/') + url
+                }
+                urls.add(url)
               }
-              urls.add(url)
+            } else if (isLord) {
+              // LORD: Busca por links em elementos de produto
+              const seletoresProduto = [
+                '.product-item a',
+                '.product a',
+                '[data-product] a',
+                '.item-product a',
+                '.produto a',
+                'li[itemtype*="Product"] a',
+                '.showcase-item a',
+                '[class*="product"] a[href*="/"]'
+              ]
+              
+              seletoresProduto.forEach(seletor => {
+                try {
+                  const links = document.querySelectorAll(seletor)
+                  links.forEach(link => {
+                    let url = link.href
+                    if (url && url.startsWith('http')) {
+                      // Filtrar apenas URLs que parecem ser de produtos
+                      if (!url.includes('/c/') && 
+                          !url.includes('/categoria') &&
+                          !url.includes('/sobre') &&
+                          !url.includes('/contato') &&
+                          !url.includes('/blog') &&
+                          !url.includes('?pagina=') &&
+                          !url.includes('solicite-assistencia') &&
+                          !url.includes('troca-e-devolucao') &&
+                          !url.includes('atendimento') &&
+                          !url.includes('novidades') &&
+                          !url.includes('cdn-cgi') &&
+                          url !== window.location.href) {
+                        urls.add(url)
+                      }
+                    }
+                  })
+                } catch (e) {}
+              })
+            } else {
+              // GENÉRICO: Tenta ambos os métodos
+              // Método 1: Regex
+              const regex = /href="([^"]*-p\d+[^"]*)"/gi
+              let match
+              while ((match = regex.exec(document.documentElement.outerHTML)) !== null) {
+                let url = match[1]
+                if (!url.startsWith('http')) {
+                  url = window.location.origin + (url.startsWith('/') ? '' : '/') + url
+                }
+                urls.add(url)
+              }
+              
+              // Método 2: Seletores
+              const seletoresProduto = [
+                '.product-item a',
+                '.product a',
+                '[data-product] a',
+                'li[itemtype*="Product"] a'
+              ]
+              
+              seletoresProduto.forEach(seletor => {
+                try {
+                  const links = document.querySelectorAll(seletor)
+                  links.forEach(link => {
+                    let url = link.href
+                    if (url && url.startsWith('http') && 
+                        !url.includes('/categoria') && 
+                        url !== window.location.href) {
+                      urls.add(url)
+                    }
+                  })
+                } catch (e) {}
+              })
             }
+            
             return Array.from(urls)
-          })
+          }, urlBase)
 
           if (urlsProdutos.length === 0) break
 
