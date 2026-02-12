@@ -71,6 +71,7 @@ async function atualizarPrecos({ concorrenteId, tenantId, supabaseUrl, supabaseK
 
     // Tentar caminhos do sistema primeiro (mais confiável no Railway)
     const chromiumPaths = [
+      '/usr/local/bin/chromium-wrapper', // Wrapper customizado
       process.env.PUPPETEER_EXECUTABLE_PATH,
       '/usr/bin/chromium',
       '/usr/bin/chromium-browser',

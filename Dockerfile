@@ -36,8 +36,12 @@ RUN npm ci --only=production
 # Copiar código
 COPY . .
 
+# Criar wrapper do Chromium que desabilita crashpad
+RUN echo '#!/bin/bash\nexec /usr/bin/chromium "$@" --disable-crash-reporter --disable-breakpad 2>&1 | grep -v "chrome_crashpad_handler"' > /usr/local/bin/chromium-wrapper \
+    && chmod +x /usr/local/bin/chromium-wrapper
+
 # Variáveis de ambiente
-ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/local/bin/chromium-wrapper
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 ENV NODE_ENV=production
 ENV PORT=3001
