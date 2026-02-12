@@ -1,4 +1,5 @@
-const puppeteer = require('puppeteer')
+const puppeteer = require('puppeteer-core')
+const chromium = require('@sparticuz/chromium')
 const { createClient } = require('@supabase/supabase-js')
 
 async function crawlerRapido({ concorrenteId, urlBase, tenantId, supabaseUrl, supabaseKey }) {
@@ -8,34 +9,13 @@ async function crawlerRapido({ concorrenteId, urlBase, tenantId, supabaseUrl, su
   try {
     console.log('🚀 Iniciando crawler rápido para:', urlBase)
 
-    const launchOptions = {
-      headless: 'new',
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-        '--disable-software-rasterizer',
-        '--disable-extensions',
-        '--no-first-run',
-        '--disable-crash-reporter',
-        '--disable-breakpad'
-      ]
-    }
-    
-    if (process.platform === 'linux') {
-      launchOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium-browser'
-      launchOptions.args.push(
-        '--no-zygote',
-        '--single-process',
-        '--disable-crash-reporter',
-        '--disable-breakpad',
-        '--crash-dumps-dir=/tmp',
-        '--enable-crashpad=false'
-      )
-    }
-    
-    browser = await puppeteer.launch(launchOptions)
+    browser = await puppeteer.launch({
+      args: chromium.args,
+      defaultViewport: chromium.defaultViewport,
+      executablePath: await chromium.executablePath(),
+      headless: chromium.headless
+    })
+    console.log('✅ Puppeteer iniciado')
 
     const page = await browser.newPage()
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36')
