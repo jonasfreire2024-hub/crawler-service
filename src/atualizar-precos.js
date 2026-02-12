@@ -40,7 +40,17 @@ async function atualizarPrecos({ concorrenteId, tenantId, supabaseUrl, supabaseK
       console.log('Tentando Puppeteer com Chromium bundled...')
       browser = await puppeteer.launch({
         headless: 'new',
-        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-gpu',
+          '--disable-software-rasterizer',
+          '--disable-extensions',
+          '--no-first-run',
+          '--disable-crash-reporter',
+          '--disable-breakpad'
+        ]
       })
       console.log('✅ Puppeteer iniciado com Chromium bundled')
     } catch (bundledError) {
@@ -60,7 +70,19 @@ async function atualizarPrecos({ concorrenteId, tenantId, supabaseUrl, supabaseK
           browser = await puppeteer.launch({
             headless: 'new',
             executablePath: execPath,
-            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
+            args: [
+              '--no-sandbox',
+              '--disable-setuid-sandbox',
+              '--disable-dev-shm-usage',
+              '--disable-gpu',
+              '--disable-software-rasterizer',
+              '--disable-extensions',
+              '--no-first-run',
+              '--disable-crash-reporter',
+              '--disable-breakpad',
+              '--no-zygote',
+              '--single-process'
+            ]
           })
           console.log(`✅ Puppeteer iniciado com: ${execPath}`)
           break

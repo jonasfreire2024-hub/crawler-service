@@ -19,14 +19,33 @@ async function crawlerCompleto({ concorrenteId, urlBase, tenantId, supabaseUrl, 
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
         '--disable-gpu',
-        '--no-first-run'
+        '--no-first-run',
+        '--disable-software-rasterizer',
+        '--disable-extensions',
+        '--disable-background-networking',
+        '--disable-default-apps',
+        '--disable-sync',
+        '--disable-translate',
+        '--hide-scrollbars',
+        '--metrics-recording-only',
+        '--mute-audio',
+        '--no-first-run',
+        '--safebrowsing-disable-auto-update',
+        '--ignore-certificate-errors',
+        '--ignore-ssl-errors',
+        '--ignore-certificate-errors-spki-list'
       ]
     }
     
     // No Linux (Railway), usar chromium-browser
     if (process.platform === 'linux') {
       launchOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium-browser'
-      launchOptions.args.push('--no-zygote', '--single-process')
+      launchOptions.args.push(
+        '--no-zygote',
+        '--single-process',
+        '--disable-crash-reporter',
+        '--disable-breakpad'
+      )
     }
     // No Windows/Mac, deixar Puppeteer usar o Chrome baixado automaticamente
     
