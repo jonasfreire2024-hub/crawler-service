@@ -8,19 +8,26 @@ async function crawlerCompleto({ concorrenteId, urlBase, tenantId, supabaseUrl, 
   try {
     console.log('🚀 Iniciando crawler COMPLETO para:', urlBase)
 
-    browser = await puppeteer.launch({
+    // Configuração do browser baseada no sistema operacional
+    const launchOptions = {
       headless: 'new',
-      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium-browser',
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
         '--disable-gpu',
-        '--no-first-run',
-        '--no-zygote',
-        '--single-process'
+        '--no-first-run'
       ]
-    })
+    }
+    
+    // No Linux (Railway), usar chromium-browser
+    if (process.platform === 'linux') {
+      launchOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium-browser'
+      launchOptions.args.push('--no-zygote', '--single-process')
+    }
+    // No Windows/Mac, deixar Puppeteer usar o Chrome baixado automaticamente
+    
+    browser = await puppeteer.launch(launchOptions)
 
     let page = await browser.newPage()
     page.setDefaultNavigationTimeout(60000)
@@ -282,6 +289,16 @@ async function crawlerCompleto({ concorrenteId, urlBase, tenantId, supabaseUrl, 
                 
                 // Limpar URL
                 href = href.split('?')[0].split('#')[0].replace(/\/$/, '')
+                
+                // Filtrar URLs externas (WhatsApp, redes sociais, etc)
+                if (href.includes('whatsapp.com') ||
+                    href.includes('facebook.com') ||
+                    href.includes('instagram.com') ||
+                    href.includes('youtube.com') ||
+                    href.includes('twitter.com') ||
+                    href.includes('api.whatsapp')) {
+                  return
+                }
                 
                 // LORD: Produtos sempre têm /produto/ na URL
                 if (href.includes('/produto/')) {
