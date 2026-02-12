@@ -1,27 +1,43 @@
 FROM node:20-slim
 
-# Instalar dependências do Chromium e ferramentas de debug
+# Instalar dependências mínimas
 RUN apt-get update && apt-get install -y \
-    chromium \
-    chromium-sandbox \
+    ca-certificates \
     fonts-liberation \
+    libappindicator3-1 \
     libasound2 \
     libatk-bridge2.0-0 \
     libatk1.0-0 \
-    libatspi2.0-0 \
+    libc6 \
+    libcairo2 \
     libcups2 \
     libdbus-1-3 \
-    libdrm2 \
+    libexpat1 \
+    libfontconfig1 \
     libgbm1 \
+    libgcc1 \
+    libglib2.0-0 \
     libgtk-3-0 \
     libnspr4 \
     libnss3 \
-    libwayland-client0 \
+    libpango-1.0-0 \
+    libpangocairo-1.0-0 \
+    libstdc++6 \
+    libx11-6 \
+    libx11-xcb1 \
+    libxcb1 \
     libxcomposite1 \
+    libxcursor1 \
     libxdamage1 \
+    libxext6 \
     libxfixes3 \
-    libxkbcommon0 \
+    libxi6 \
     libxrandr2 \
+    libxrender1 \
+    libxss1 \
+    libxtst6 \
+    lsb-release \
+    wget \
     xdg-utils \
     curl \
     && rm -rf /var/lib/apt/lists/*
@@ -36,25 +52,14 @@ RUN npm ci --only=production
 # Copiar código
 COPY . .
 
-# Criar wrapper do Chromium que desabilita crashpad
-RUN echo '#!/bin/bash\nexec /usr/bin/chromium "$@" --disable-crash-reporter --disable-breakpad 2>&1 | grep -v "chrome_crashpad_handler"' > /usr/local/bin/chromium-wrapper \
-    && chmod +x /usr/local/bin/chromium-wrapper
-
 # Variáveis de ambiente
-ENV PUPPETEER_EXECUTABLE_PATH=/usr/local/bin/chromium-wrapper
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 ENV NODE_ENV=production
 ENV PORT=3001
-ENV CHROME_DEVEL_SANDBOX=/usr/lib/chromium/chrome-sandbox
-ENV DISABLE_CRASHPAD=1
-ENV CHROME_CRASHPAD_PIPE_NAME=
-ENV CHROME_CRASH_REPORTER_ENABLED=0
 
 # Criar usuário não-root para segurança
 RUN groupadd -r crawler && useradd -r -g crawler crawler \
-    && chown -R crawler:crawler /app \
-    && mkdir -p /tmp/.X11-unix \
-    && chmod 1777 /tmp/.X11-unix
+    && chown -R crawler:crawler /app
 
 USER crawler
 
@@ -65,5 +70,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
 # Expor porta
 EXPOSE 3001
 
-# Comando para iniciar com logs detalhados
+# Comando para iniciar
 CMD ["node", "start.js"]

@@ -1,4 +1,5 @@
-const puppeteer = require('puppeteer')
+const puppeteer = require('puppeteer-core')
+const chromium = require('@sparticuz/chromium')
 const { createClient } = require('@supabase/supabase-js')
 
 async function crawlerCompleto({ concorrenteId, urlBase, tenantId, supabaseUrl, supabaseKey, testeRapido = false }) {
@@ -11,81 +12,14 @@ async function crawlerCompleto({ concorrenteId, urlBase, tenantId, supabaseUrl, 
     }
     console.log('🚀 Iniciando crawler COMPLETO para:', urlBase)
 
-    // Args comuns para todas as tentativas
-    const commonArgs = [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-gpu',
-      '--disable-software-rasterizer',
-      '--disable-extensions',
-      '--no-first-run',
-      '--disable-crash-reporter',
-      '--disable-breakpad',
-      '--no-zygote',
-      '--single-process',
-      '--disable-background-networking',
-      '--disable-background-timer-throttling',
-      '--disable-backgrounding-occluded-windows',
-      '--disable-renderer-backgrounding',
-      '--disable-features=TranslateUI',
-      '--disable-ipc-flooding-protection',
-      '--disable-hang-monitor',
-      '--disable-popup-blocking',
-      '--disable-prompt-on-repost',
-      '--disable-sync',
-      '--force-color-profile=srgb',
-      '--metrics-recording-only',
-      '--no-default-browser-check',
-      '--safebrowsing-disable-auto-update',
-      '--enable-automation',
-      '--password-store=basic',
-      '--use-mock-keychain',
-      '--hide-scrollbars',
-      '--mute-audio',
-      '--ignore-certificate-errors',
-      '--ignore-ssl-errors',
-      '--ignore-certificate-errors-spki-list'
-    ]
-
-    // Tentar caminhos do sistema primeiro (mais confiável no Railway)
-    const chromiumPaths = [
-      '/usr/local/bin/chromium-wrapper', // Wrapper customizado
-      process.env.PUPPETEER_EXECUTABLE_PATH,
-      '/usr/bin/chromium',
-      '/usr/bin/chromium-browser',
-      '/nix/var/nix/profiles/default/bin/chromium'
-    ].filter(Boolean)
-    
-    for (const execPath of chromiumPaths) {
-      try {
-        console.log(`Tentando: ${execPath}`)
-        browser = await puppeteer.launch({
-          headless: 'new',
-          executablePath: execPath,
-          args: commonArgs
-        })
-        console.log(`✅ Puppeteer iniciado com: ${execPath}`)
-        break
-      } catch (err) {
-        console.log(`❌ Falhou ${execPath}:`, err.message)
-      }
-    }
-    
-    // Se não funcionou, tentar Chromium bundled como fallback
-    if (!browser) {
-      try {
-        console.log('Tentando Puppeteer com Chromium bundled...')
-        browser = await puppeteer.launch({
-          headless: 'new',
-          args: commonArgs
-        })
-        console.log('✅ Puppeteer iniciado com Chromium bundled')
-      } catch (bundledError) {
-        console.log('❌ Chromium bundled falhou:', bundledError.message)
-        throw new Error('Não foi possível iniciar o Chromium em nenhum caminho')
-      }
-    }
+    // Usar @sparticuz/chromium - funciona perfeitamente no Railway
+    browser = await puppeteer.launch({
+      args: chromium.args,
+      defaultViewport: chromium.defaultViewport,
+      executablePath: await chromium.executablePath(),
+      headless: chromium.headless
+    })
+    console.log('✅ Puppeteer iniciado')
 
     let page = await browser.newPage()
     page.setDefaultNavigationTimeout(60000)

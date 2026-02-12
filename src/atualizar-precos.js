@@ -1,4 +1,5 @@
-const puppeteer = require('puppeteer')
+const puppeteer = require('puppeteer-core')
+const chromium = require('@sparticuz/chromium')
 const { createClient } = require('@supabase/supabase-js')
 
 async function atualizarPrecos({ concorrenteId, tenantId, supabaseUrl, supabaseKey }) {
@@ -15,7 +16,6 @@ async function atualizarPrecos({ concorrenteId, tenantId, supabaseUrl, supabaseK
   try {
     console.log('🔄 Buscando produtos no banco...')
 
-    // Buscar produtos já cadastrados deste concorrente (com estoque anterior)
     const { data: produtos, error } = await supabase
       .from('ag_concorrentes_produtos')
       .select('id, url, nome, preco, estoque, preco_anterior, estoque_anterior')
@@ -33,88 +33,21 @@ async function atualizarPrecos({ concorrenteId, tenantId, supabaseUrl, supabaseK
     }
 
     console.log(`📦 ${produtos.length} produtos encontrados`)
-    console.log('🌐 Iniciando Puppeteer...')
+    console.log('🌐 Iniciando Puppeteer com @sparticuz/chromium...')
     
-    // Args comuns para todas as tentativas
-    const commonArgs = [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-gpu',
-      '--disable-software-rasterizer',
-      '--disable-extensions',
-      '--no-first-run',
-      '--disable-crash-reporter',
-      '--disable-breakpad',
-      '--no-zygote',
-      '--single-process',
-      '--disable-background-networking',
-      '--disable-background-timer-throttling',
-      '--disable-backgrounding-occluded-windows',
-      '--disable-renderer-backgrounding',
-      '--disable-features=TranslateUI',
-      '--disable-ipc-flooding-protection',
-      '--disable-hang-monitor',
-      '--disable-popup-blocking',
-      '--disable-prompt-on-repost',
-      '--disable-sync',
-      '--force-color-profile=srgb',
-      '--metrics-recording-only',
-      '--no-default-browser-check',
-      '--safebrowsing-disable-auto-update',
-      '--enable-automation',
-      '--password-store=basic',
-      '--use-mock-keychain',
-      '--hide-scrollbars',
-      '--mute-audio'
-    ]
-
-    // Tentar caminhos do sistema primeiro (mais confiável no Railway)
-    const chromiumPaths = [
-      '/usr/local/bin/chromium-wrapper', // Wrapper customizado
-      process.env.PUPPETEER_EXECUTABLE_PATH,
-      '/usr/bin/chromium',
-      '/usr/bin/chromium-browser',
-      '/nix/var/nix/profiles/default/bin/chromium'
-    ].filter(Boolean)
-    
-    for (const execPath of chromiumPaths) {
-      try {
-        console.log(`Tentando: ${execPath}`)
-        browser = await puppeteer.launch({
-          headless: 'new',
-          executablePath: execPath,
-          args: commonArgs
-        })
-        console.log(`✅ Puppeteer iniciado com: ${execPath}`)
-        break
-      } catch (err) {
-        console.log(`❌ Falhou ${execPath}:`, err.message)
-      }
-    }
-    
-    // Se não funcionou, tentar Chromium bundled como fallback
-    if (!browser) {
-      try {
-        console.log('Tentando Puppeteer com Chromium bundled...')
-        browser = await puppeteer.launch({
-          headless: 'new',
-          args: commonArgs
-        })
-        console.log('✅ Puppeteer iniciado com Chromium bundled')
-      } catch (bundledError) {
-        console.log('❌ Chromium bundled falhou:', bundledError.message)
-      }
-    }
-    
-    if (!browser) {
-      throw new Error('Não foi possível iniciar o Chromium em nenhum caminho')
-    }
+    // Usar @sparticuz/chromium - funciona perfeitamente no Railway
+    browser = await puppeteer.launch({
+      args: chromium.args,
+      defaultViewport: chromium.defaultViewport,
+      executablePath: await chromium.executablePath(),
+      headless: chromium.headless
+    })
+    console.log('✅ Puppeteer iniciado')
 
     const page = await browser.newPage()
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36')
     
-    // Bloquear recursos desnecessários pra ser mais rápido
+    // Bloquear recursos desnecessários
     await page.setRequestInterception(true)
     page.on('request', req => {
       if (['stylesheet', 'font', 'media'].includes(req.resourceType())) {
@@ -137,7 +70,6 @@ async function atualizarPrecos({ concorrenteId, tenantId, supabaseUrl, supabaseK
       try {
         const response = await page.goto(produto.url, { waitUntil: 'domcontentloaded', timeout: 15000 })
         
-        // Se página retornou 404 ou erro, marcar como inativo
         if (!response || response.status() === 404 || response.status() >= 400) {
           console.log(`   ❌ ${produto.nome}: Página não encontrada (${response?.status() || 'sem resposta'})`)
           produtosInativados.push(produto.id)
@@ -147,23 +79,21 @@ async function atualizarPrecos({ concorrenteId, tenantId, supabaseUrl, supabaseK
         
         await new Promise(r => setTimeout(r, 500))
 
-        // Extrair preço e estoque - USANDO MESMA LÓGICA DO BOTÃO ATUALIZAR
         const dados = await page.evaluate(() => {
           let preco = 0
           let estoque = null
           let disponivel = true
 
-          // Buscar apenas na área do produto principal (como faz o botão)
           const areaProduto = document.querySelector('.product-details-content, article[itemtype*="Product"]')
           
-          // 1. PRIMEIRO: Tentar meta tag (mais confiável - funciona mesmo com preço oculto)
+          // Meta tag (mais confiável)
           const metaPrice = document.querySelector('meta[itemprop="price"]')
           if (metaPrice && metaPrice.content) {
             const valor = parseFloat(metaPrice.content)
             if (valor > 0) preco = valor
           }
           
-          // 2. Tentar data-element="price" (Rufer usa isso, mesmo com display:none)
+          // data-element="price"
           if (preco === 0) {
             const dataPrice = document.querySelector('[data-element="price"]')
             if (dataPrice) {
@@ -176,11 +106,9 @@ async function atualizarPrecos({ concorrenteId, tenantId, supabaseUrl, supabaseK
           }
           
           if (areaProduto) {
-            // ===== PREÇOS - APENAS DO PRODUTO PRINCIPAL =====
             const areaPrecos = areaProduto.querySelector('.product-values, .product-price, .price-detail-fixed')
             
             if (areaPrecos) {
-              // Preço normal
               const precoNormalEl = areaPrecos.querySelector('.price[data-element="sale-price"] p, .price p')
               if (precoNormalEl) {
                 const match = precoNormalEl.textContent.match(/R\$\s*([0-9]{1,3}(?:\.[0-9]{3})*(?:,[0-9]{2})?)/)
@@ -189,7 +117,6 @@ async function atualizarPrecos({ concorrenteId, tenantId, supabaseUrl, supabaseK
                 }
               }
               
-              // Preço com desconto (PIX/dinheiro)
               const precoDescontoEl = areaPrecos.querySelector('.best-price')
               if (precoDescontoEl) {
                 const match = precoDescontoEl.textContent.match(/R\$\s*([0-9]{1,3}(?:\.[0-9]{3})*(?:,[0-9]{2})?)/)
@@ -199,7 +126,6 @@ async function atualizarPrecos({ concorrenteId, tenantId, supabaseUrl, supabaseK
               }
             }
             
-            // ===== ESTOQUE =====
             const textoCompleto = areaProduto.textContent.toLowerCase()
             
             if (textoCompleto.includes('em estoque')) {
@@ -214,7 +140,6 @@ async function atualizarPrecos({ concorrenteId, tenantId, supabaseUrl, supabaseK
             }
           }
           
-          // Fallback: se não achou na área do produto, tentar seletores genéricos
           if (preco === 0) {
             const precoSelectors = [
               '.price', '.preco', '[class*="price"]', '[class*="preco"]',
@@ -234,7 +159,6 @@ async function atualizarPrecos({ concorrenteId, tenantId, supabaseUrl, supabaseK
             }
           }
 
-          // Fallback estoque
           if (estoque === null) {
             const estoqueSelectors = [
               '.stock', '.estoque', '[class*="stock"]', '[class*="estoque"]',
@@ -259,44 +183,37 @@ async function atualizarPrecos({ concorrenteId, tenantId, supabaseUrl, supabaseK
           return { preco, estoque, disponivel }
         })
 
-        // Só atualiza se encontrou preço
         if (dados.preco > 0) {
           const precoAnterior = produto.preco || 0
           const estoqueAnterior = produto.estoque ? parseInt(produto.estoque) : null
           const estoqueAtual = dados.estoque ? parseInt(dados.estoque) : null
           
-          // Verificar se preço mudou (tolerância de 1 centavo)
           const precoMudou = precoAnterior && Math.abs(precoAnterior - dados.preco) > 0.01
           const agora = new Date().toISOString()
 
-          // Montar objeto de atualização
           const dadosAtualizacao = {
             preco: dados.preco,
             preco_anterior: precoAnterior,
             estoque: dados.estoque,
             estoque_anterior: estoqueAnterior,
             disponibilidade: dados.disponivel ? 'disponível' : 'indisponível',
-            ultima_coleta: agora, // Sempre atualiza - quando foi verificado
+            ultima_coleta: agora,
             updated_at: agora
           }
           
-          // Se preço mudou, registrar a data da alteração
           if (precoMudou) {
             dadosAtualizacao.ultima_alteracao_preco = agora
           }
 
-          // Atualizar produto
           await supabase
             .from('ag_concorrentes_produtos')
             .update(dadosAtualizacao)
             .eq('id', produto.id)
 
-          // Calcular variações
           const variacaoPreco = precoAnterior ? dados.preco - precoAnterior : 0
           const variacaoPrecoPercent = precoAnterior ? ((dados.preco - precoAnterior) / precoAnterior * 100) : 0
           const variacaoEstoque = (estoqueAnterior !== null && estoqueAtual !== null) ? estoqueAtual - estoqueAnterior : null
 
-          // Determinar tipo de movimento
           let tipoMovimento = null
           if (variacaoEstoque !== null && variacaoEstoque < 0) tipoMovimento = 'venda'
           else if (variacaoEstoque !== null && variacaoEstoque > 0) tipoMovimento = 'compra'
@@ -305,8 +222,6 @@ async function atualizarPrecos({ concorrenteId, tenantId, supabaseUrl, supabaseK
           else if (!dados.disponivel && produto.disponibilidade !== 'indisponível') tipoMovimento = 'esgotado'
           else if (dados.disponivel && produto.disponibilidade === 'indisponível') tipoMovimento = 'reabastecido'
 
-          // Registrar movimentação APENAS se houve mudança real
-          // Preço mudou OU estoque mudou OU disponibilidade mudou
           const estoqueMudou = variacaoEstoque !== null && variacaoEstoque !== 0
           const disponibilidadeMudou = tipoMovimento === 'esgotado' || tipoMovimento === 'reabastecido'
           
@@ -328,7 +243,6 @@ async function atualizarPrecos({ concorrenteId, tenantId, supabaseUrl, supabaseK
             })
           }
 
-          // Registrar histórico de preços APENAS se preço realmente mudou
           if (precoMudou) {
             historico.push({
               produto_concorrente_id: produto.id,
@@ -349,15 +263,13 @@ async function atualizarPrecos({ concorrenteId, tenantId, supabaseUrl, supabaseK
 
       } catch (err) {
         erros++
-        // Continua pro próximo produto
       }
     }
 
     await browser.close()
 
-    // Inativar produtos que retornaram 404
     if (produtosInativados.length > 0) {
-      const { error: inativoError } = await supabase
+      await supabase
         .from('ag_concorrentes_produtos')
         .update({ 
           ativo: false, 
@@ -366,18 +278,13 @@ async function atualizarPrecos({ concorrenteId, tenantId, supabaseUrl, supabaseK
         })
         .in('id', produtosInativados)
       
-      if (inativoError) {
-        console.error('❌ Erro ao inativar produtos:', inativoError.message)
-      } else {
-        console.log(`🗑️ ${produtosInativados.length} produtos inativados (página não encontrada)`)
-      }
+      console.log(`🗑️ ${produtosInativados.length} produtos inativados (página não encontrada)`)
     }
 
-    // Inativar produtos que não foram atualizados há mais de 7 dias
     const seteDiasAtras = new Date()
     seteDiasAtras.setDate(seteDiasAtras.getDate() - 7)
     
-    const { data: produtosAntigos, error: antigosError } = await supabase
+    const { data: produtosAntigos } = await supabase
       .from('ag_concorrentes_produtos')
       .update({ 
         ativo: false, 
@@ -394,39 +301,22 @@ async function atualizarPrecos({ concorrenteId, tenantId, supabaseUrl, supabaseK
       console.log(`⏰ ${produtosDesatualizados} produtos inativados (sem atualização há 7+ dias)`)
     }
 
-    // Salvar movimentações (para análise de vendas/compras)
     if (movimentacoes.length > 0) {
-      const { error: movError } = await supabase.from('ag_concorrentes_movimentacoes').insert(movimentacoes)
-      if (movError) {
-        console.error('❌ Erro ao salvar movimentações:', movError.message)
-      } else {
-        console.log(`📊 ${movimentacoes.length} movimentações registradas`)
-      }
+      await supabase.from('ag_concorrentes_movimentacoes').insert(movimentacoes)
+      console.log(`📊 ${movimentacoes.length} movimentações registradas`)
     }
 
-    // Salvar histórico de preços
     if (historico.length > 0) {
-      const { error: histError } = await supabase.from('ag_concorrentes_historico_precos').insert(historico)
-      if (histError) {
-        console.error('❌ Erro ao salvar histórico:', histError.message)
-      } else {
-        console.log(`📈 ${historico.length} alterações de preço registradas`)
-      }
+      await supabase.from('ag_concorrentes_historico_precos').insert(historico)
+      console.log(`📈 ${historico.length} alterações de preço registradas`)
     }
 
-    // Registrar log
-    const logResult = await supabase.from('ag_concorrentes_logs').insert({
+    await supabase.from('ag_concorrentes_logs').insert({
       concorrente_id: concorrenteId,
       tenant_id: tenantId,
       tipo: 'atualizar_precos',
       descricao: `${atualizados} atualizados, ${erros} erros, ${inativos} inativados (404), ${produtosDesatualizados} desatualizados, ${historico.length} mudanças de preço`
     })
-    
-    if (logResult.error) {
-      console.error('❌ Erro ao salvar log:', logResult.error)
-    } else {
-      console.log('📝 Log salvo com sucesso')
-    }
 
     console.log(`✅ Atualização concluída: ${atualizados} produtos, ${inativos + produtosDesatualizados} inativados, ${movimentacoes.length} movimentações, ${historico.length} mudanças de preço`)
     
