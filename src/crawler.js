@@ -25,15 +25,7 @@ async function crawlerCompleto({ concorrenteId, urlBase, tenantId, supabaseUrl, 
     page.setDefaultNavigationTimeout(60000)
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36')
 
-    // Bloquear recursos desnecessários
-    await page.setRequestInterception(true)
-    page.on('request', req => {
-      if (['stylesheet', 'font', 'media'].includes(req.resourceType())) {
-        req.abort()
-      } else {
-        req.continue()
-      }
-    })
+    // NÃO bloquear recursos - pode causar problemas com JavaScript
 
     // ========================================================================
     // LOGIN (se for Lord Distribuidor)
