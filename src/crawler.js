@@ -274,14 +274,26 @@ async function crawlerCompleto({ concorrenteId, urlBase, tenantId, supabaseUrl, 
                 urls.add(url)
               }
             } else if (isLord) {
-              // LORD: Método mais agressivo - busca todos os links com imagem ou preço
+              // LORD: Produtos têm /produto/ na URL
               const todosLinks = document.querySelectorAll('a')
               todosLinks.forEach(link => {
-                const href = link.href
+                let href = link.href
                 if (!href || !href.startsWith('http')) return
                 
+                // Limpar URL
+                href = href.split('?')[0].split('#')[0].replace(/\/$/, '')
+                
+                // LORD: Produtos sempre têm /produto/ na URL
+                if (href.includes('/produto/')) {
+                  urls.add(href)
+                  return
+                }
+                
+                // Fallback: Se não tem /produto/, verificar contexto
                 // Filtrar URLs que NÃO são produtos
-                if (href.includes('/c/') ||
+                if (href === urlBase || 
+                    href === window.location.href ||
+                    href.includes('/c/') ||
                     href.includes('/categoria') ||
                     href.includes('/minha-conta') ||
                     href.includes('/carrinho') ||
@@ -295,18 +307,16 @@ async function crawlerCompleto({ concorrenteId, urlBase, tenantId, supabaseUrl, 
                     href.includes('atendimento') ||
                     href.includes('novidades') ||
                     href.includes('cdn-cgi') ||
-                    href.includes('#') ||
-                    href === window.location.href) {
+                    href.includes('promocoes')) {
                   return
                 }
                 
-                // Verificar se o link tem imagem ou preço próximo (indicativo de produto)
+                // Verificar se o link tem imagem ou preço próximo
                 const parent = link.closest('li, div, article')
                 if (parent) {
                   const temImagem = parent.querySelector('img')
                   const temPreco = parent.textContent.includes('R$')
                   
-                  // Se tem imagem OU preço, provavelmente é um produto
                   if (temImagem || temPreco) {
                     urls.add(href)
                   }
@@ -387,7 +397,10 @@ async function crawlerCompleto({ concorrenteId, urlBase, tenantId, supabaseUrl, 
           if (pagina === 1) {
             console.log(`   Encontrados ${urlsProdutos.length} produtos na página ${pagina}`)
             if (urlsProdutos.length > 0) {
-              console.log(`   Exemplo: ${urlsProdutos[0]}`)
+              console.log(`   Exemplos:`)
+              urlsProdutos.slice(0, 3).forEach(url => console.log(`     - ${url}`))
+            } else {
+              console.log(`   ⚠️ Nenhum produto encontrado - possível problema na detecção`)
             }
           }
 
