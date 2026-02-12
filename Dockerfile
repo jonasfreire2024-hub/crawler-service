@@ -43,4 +43,4 @@ ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 EXPOSE 3001
 
 # Comando para iniciar
-CMD ["node", "server.js"]
+CMD ["node", "src/index.js"]
