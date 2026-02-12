@@ -469,7 +469,9 @@ async function crawlerCompleto({ concorrenteId, urlBase, tenantId, supabaseUrl, 
                 tenant_id: tenantId,
                 concorrente_id: concorrenteId,
                 nome: p.nome,
-                preco: p.preco, // Usar preço promocional (ou normal se não tiver promoção)
+                preco: p.preco, // Preço com desconto (PIX)
+                preco_pix: p.preco, // Mesmo que preco
+                preco_normal: p.preco_original || p.preco, // Preço sem desconto
                 url: p.url,
                 imagem_url: p.imagem,
                 categoria: p.categoria,
