@@ -38,26 +38,33 @@ async function crawlerCompleto({ concorrenteId, urlBase, tenantId, supabaseUrl, 
     // ========================================================================
     // LOGIN (se for Lord Distribuidor)
     // ========================================================================
+    // LOGIN (se for Lord Distribuidor)
+    // ========================================================================
     if (urlBase.includes('lordistribuidor.com.br')) {
       console.log('🔐 Detectado Lord - Fazendo login...')
       try {
-        await page.goto('https://lordistribuidor.com.br/minha-conta', { waitUntil: 'domcontentloaded', timeout: 60000 })
-        await new Promise(r => setTimeout(r, 5000))
+        await page.goto('https://lordistribuidor.com.br/minha-conta', { 
+          waitUntil: 'domcontentloaded', 
+          timeout: 30000 
+        })
+        await new Promise(r => setTimeout(r, 2000))
         
-        await page.type('#username', 'projetofabiano1512@gmail.com')
-        await page.type('#password', '151295')
-        
-        await page.evaluate(() => {
-          const buttons = Array.from(document.querySelectorAll('button, input[type="submit"]'))
-          const loginButton = buttons.find(btn => 
-            btn.textContent?.toLowerCase().includes('entrar') ||
-            btn.value?.toLowerCase().includes('entrar')
-          )
-          if (loginButton) loginButton.click()
+        // Verificar se já está logado
+        const jaLogado = await page.evaluate(() => {
+          return document.body.textContent.includes('Olá') || 
+                 document.body.textContent.includes('Sair') ||
+                 !document.querySelector('#username')
         })
         
-        await new Promise(r => setTimeout(r, 5000))
-        console.log('✅ Login realizado')
+        if (!jaLogado) {
+          await page.type('#username', 'projetofabiano1512@gmail.com', { delay: 50 })
+          await page.type('#password', '151295', { delay: 50 })
+          await page.click('button[name="login"]')
+          await new Promise(r => setTimeout(r, 5000))
+          console.log('✅ Login realizado')
+        } else {
+          console.log('✅ Já estava logado')
+        }
       } catch (e) {
         console.log('⚠️ Erro no login, continuando sem autenticação:', e.message)
       }
