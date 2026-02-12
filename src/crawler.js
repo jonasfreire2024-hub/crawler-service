@@ -11,47 +11,80 @@ async function crawlerCompleto({ concorrenteId, urlBase, tenantId, supabaseUrl, 
     }
     console.log('🚀 Iniciando crawler COMPLETO para:', urlBase)
 
-    // Configuração do browser baseada no sistema operacional
-    const launchOptions = {
-      headless: 'new',
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-        '--no-first-run',
-        '--disable-software-rasterizer',
-        '--disable-extensions',
-        '--disable-background-networking',
-        '--disable-default-apps',
-        '--disable-sync',
-        '--disable-translate',
-        '--hide-scrollbars',
-        '--metrics-recording-only',
-        '--mute-audio',
-        '--no-first-run',
-        '--safebrowsing-disable-auto-update',
-        '--ignore-certificate-errors',
-        '--ignore-ssl-errors',
-        '--ignore-certificate-errors-spki-list'
-      ]
+    // Args comuns para todas as tentativas
+    const commonArgs = [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-gpu',
+      '--disable-software-rasterizer',
+      '--disable-extensions',
+      '--no-first-run',
+      '--disable-crash-reporter',
+      '--disable-breakpad',
+      '--no-zygote',
+      '--single-process',
+      '--disable-background-networking',
+      '--disable-background-timer-throttling',
+      '--disable-backgrounding-occluded-windows',
+      '--disable-renderer-backgrounding',
+      '--disable-features=TranslateUI',
+      '--disable-ipc-flooding-protection',
+      '--disable-hang-monitor',
+      '--disable-popup-blocking',
+      '--disable-prompt-on-repost',
+      '--disable-sync',
+      '--force-color-profile=srgb',
+      '--metrics-recording-only',
+      '--no-default-browser-check',
+      '--safebrowsing-disable-auto-update',
+      '--enable-automation',
+      '--password-store=basic',
+      '--use-mock-keychain',
+      '--hide-scrollbars',
+      '--mute-audio',
+      '--ignore-certificate-errors',
+      '--ignore-ssl-errors',
+      '--ignore-certificate-errors-spki-list'
+    ]
+
+    // Tentar caminhos do sistema primeiro (mais confiável no Railway)
+    const chromiumPaths = [
+      process.env.PUPPETEER_EXECUTABLE_PATH,
+      '/usr/bin/chromium',
+      '/usr/bin/chromium-browser',
+      '/nix/var/nix/profiles/default/bin/chromium'
+    ].filter(Boolean)
+    
+    for (const execPath of chromiumPaths) {
+      try {
+        console.log(`Tentando: ${execPath}`)
+        browser = await puppeteer.launch({
+          headless: 'new',
+          executablePath: execPath,
+          args: commonArgs
+        })
+        console.log(`✅ Puppeteer iniciado com: ${execPath}`)
+        break
+      } catch (err) {
+        console.log(`❌ Falhou ${execPath}:`, err.message)
+      }
     }
     
-    // No Linux (Railway), usar chromium-browser
-    if (process.platform === 'linux') {
-      launchOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium-browser'
-      launchOptions.args.push(
-        '--no-zygote',
-        '--single-process',
-        '--disable-crash-reporter',
-        '--disable-breakpad',
-        '--crash-dumps-dir=/tmp',
-        '--enable-crashpad=false'
-      )
+    // Se não funcionou, tentar Chromium bundled como fallback
+    if (!browser) {
+      try {
+        console.log('Tentando Puppeteer com Chromium bundled...')
+        browser = await puppeteer.launch({
+          headless: 'new',
+          args: commonArgs
+        })
+        console.log('✅ Puppeteer iniciado com Chromium bundled')
+      } catch (bundledError) {
+        console.log('❌ Chromium bundled falhou:', bundledError.message)
+        throw new Error('Não foi possível iniciar o Chromium em nenhum caminho')
+      }
     }
-    // No Windows/Mac, deixar Puppeteer usar o Chrome baixado automaticamente
-    
-    browser = await puppeteer.launch(launchOptions)
 
     let page = await browser.newPage()
     page.setDefaultNavigationTimeout(60000)

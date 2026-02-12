@@ -43,6 +43,8 @@ ENV NODE_ENV=production
 ENV PORT=3001
 ENV CHROME_DEVEL_SANDBOX=/usr/lib/chromium/chrome-sandbox
 ENV DISABLE_CRASHPAD=1
+ENV CHROME_CRASHPAD_PIPE_NAME=
+ENV CHROME_CRASH_REPORTER_ENABLED=0
 
 # Criar usuário não-root para segurança
 RUN groupadd -r crawler && useradd -r -g crawler crawler \

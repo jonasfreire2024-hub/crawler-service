@@ -35,60 +35,74 @@ async function atualizarPrecos({ concorrenteId, tenantId, supabaseUrl, supabaseK
     console.log(`📦 ${produtos.length} produtos encontrados`)
     console.log('🌐 Iniciando Puppeteer...')
     
-    // Tentar primeiro sem executablePath (usa o Chromium bundled do Puppeteer)
-    try {
-      console.log('Tentando Puppeteer com Chromium bundled...')
-      browser = await puppeteer.launch({
-        headless: 'new',
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-gpu',
-          '--disable-software-rasterizer',
-          '--disable-extensions',
-          '--no-first-run',
-          '--disable-crash-reporter',
-          '--disable-breakpad'
-        ]
-      })
-      console.log('✅ Puppeteer iniciado com Chromium bundled')
-    } catch (bundledError) {
-      console.log('❌ Chromium bundled falhou:', bundledError.message)
-      
-      // Tentar caminhos do sistema
-      const chromiumPaths = [
-        process.env.PUPPETEER_EXECUTABLE_PATH,
-        '/nix/var/nix/profiles/default/bin/chromium',
-        '/usr/bin/chromium',
-        '/usr/bin/chromium-browser'
-      ].filter(Boolean)
-      
-      for (const execPath of chromiumPaths) {
-        try {
-          console.log(`Tentando: ${execPath}`)
-          browser = await puppeteer.launch({
-            headless: 'new',
-            executablePath: execPath,
-            args: [
-              '--no-sandbox',
-              '--disable-setuid-sandbox',
-              '--disable-dev-shm-usage',
-              '--disable-gpu',
-              '--disable-software-rasterizer',
-              '--disable-extensions',
-              '--no-first-run',
-              '--disable-crash-reporter',
-              '--disable-breakpad',
-              '--no-zygote',
-              '--single-process'
-            ]
-          })
-          console.log(`✅ Puppeteer iniciado com: ${execPath}`)
-          break
-        } catch (err) {
-          console.log(`❌ Falhou: ${execPath}`)
-        }
+    // Args comuns para todas as tentativas
+    const commonArgs = [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-gpu',
+      '--disable-software-rasterizer',
+      '--disable-extensions',
+      '--no-first-run',
+      '--disable-crash-reporter',
+      '--disable-breakpad',
+      '--no-zygote',
+      '--single-process',
+      '--disable-background-networking',
+      '--disable-background-timer-throttling',
+      '--disable-backgrounding-occluded-windows',
+      '--disable-renderer-backgrounding',
+      '--disable-features=TranslateUI',
+      '--disable-ipc-flooding-protection',
+      '--disable-hang-monitor',
+      '--disable-popup-blocking',
+      '--disable-prompt-on-repost',
+      '--disable-sync',
+      '--force-color-profile=srgb',
+      '--metrics-recording-only',
+      '--no-default-browser-check',
+      '--safebrowsing-disable-auto-update',
+      '--enable-automation',
+      '--password-store=basic',
+      '--use-mock-keychain',
+      '--hide-scrollbars',
+      '--mute-audio'
+    ]
+
+    // Tentar caminhos do sistema primeiro (mais confiável no Railway)
+    const chromiumPaths = [
+      process.env.PUPPETEER_EXECUTABLE_PATH,
+      '/usr/bin/chromium',
+      '/usr/bin/chromium-browser',
+      '/nix/var/nix/profiles/default/bin/chromium'
+    ].filter(Boolean)
+    
+    for (const execPath of chromiumPaths) {
+      try {
+        console.log(`Tentando: ${execPath}`)
+        browser = await puppeteer.launch({
+          headless: 'new',
+          executablePath: execPath,
+          args: commonArgs
+        })
+        console.log(`✅ Puppeteer iniciado com: ${execPath}`)
+        break
+      } catch (err) {
+        console.log(`❌ Falhou ${execPath}:`, err.message)
+      }
+    }
+    
+    // Se não funcionou, tentar Chromium bundled como fallback
+    if (!browser) {
+      try {
+        console.log('Tentando Puppeteer com Chromium bundled...')
+        browser = await puppeteer.launch({
+          headless: 'new',
+          args: commonArgs
+        })
+        console.log('✅ Puppeteer iniciado com Chromium bundled')
+      } catch (bundledError) {
+        console.log('❌ Chromium bundled falhou:', bundledError.message)
       }
     }
     
