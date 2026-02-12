@@ -43,7 +43,7 @@ async function crawlerCompleto({ concorrenteId, urlBase, tenantId, supabaseUrl, 
       console.log('🔐 Detectado Lord - Fazendo login...')
       try {
         await page.goto('https://lordistribuidor.com.br/minha-conta', { waitUntil: 'domcontentloaded', timeout: 60000 })
-        await new Promise(r => setTimeout(r, 3000))
+        await new Promise(r => setTimeout(r, 5000))
         
         await page.type('#username', 'projetofabiano1512@gmail.com')
         await page.type('#password', '151295')
@@ -57,7 +57,7 @@ async function crawlerCompleto({ concorrenteId, urlBase, tenantId, supabaseUrl, 
           if (loginButton) loginButton.click()
         })
         
-        await new Promise(r => setTimeout(r, 3000))
+        await new Promise(r => setTimeout(r, 5000))
         console.log('✅ Login realizado')
       } catch (e) {
         console.log('⚠️ Erro no login, continuando sem autenticação:', e.message)
@@ -69,50 +69,81 @@ async function crawlerCompleto({ concorrenteId, urlBase, tenantId, supabaseUrl, 
     // ========================================================================
     console.log('📂 FASE 1: Mapeando TODAS as categorias...')
     await page.goto(urlBase, { waitUntil: 'domcontentloaded', timeout: 60000 })
-    await new Promise(r => setTimeout(r, 2000))
+    await new Promise(r => setTimeout(r, 5000))
 
     const categoriasIniciais = await page.evaluate((baseUrl) => {
       const cats = new Set()
       
-      // Buscar em TODOS os links do menu, incluindo submenus
-      const seletores = [
-        'nav a', '.menu a', 'header a', '[class*="menu"] a', '[class*="nav"] a',
-        '[class*="dropdown"] a', '[class*="submenu"] a', '.sub-menu a',
-        '.dropdown-menu a', 'ul.menu li a', 'ul.menu li ul li a',
-        '.mega-menu a', '[class*="categoria"] a', '[class*="category"] a'
-      ]
+      // Buscar TODOS os links da página que parecem ser categorias
+      const todosLinks = document.querySelectorAll('a')
       
-      seletores.forEach(seletor => {
-        try {
+      todosLinks.forEach(link => {
+        let href = link.href
+        if (!href || !href.startsWith(baseUrl)) return
+        
+        // Filtrar apenas o que claramente NÃO é categoria
+        if (href.includes('#')) return
+        if (href.includes('login') || href.includes('conta') || href.includes('minha-conta')) return
+        if (href.includes('carrinho') || href.includes('checkout') || href.includes('cart')) return
+        if (href.includes('contato') || href.includes('sobre') || href.includes('blog')) return
+        if (href.includes('wishlist') || href.includes('compare')) return
+        if (href.includes('politica') || href.includes('termos') || href.includes('privacidade')) return
+        if (href.includes('.php') || href.includes('logoff')) return
+        
+        href = href.split('?')[0].replace(/\/$/, '')
+        
+        // Aceitar URLs que são diferentes da base e têm tamanho razoável
+        if (href !== baseUrl && href.length > baseUrl.length + 2) {
+          // Verificar se parece ser uma categoria (tem /c/ ou está no menu)
+          const isMenu = link.closest('nav, header, [class*="menu"]')
+          const hasC = href.includes('/c/')
+          const hasCategoria = href.includes('/categoria')
+          
+          // Se está no menu OU tem /c/ OU tem /categoria, é provavelmente uma categoria
+          if (isMenu || hasC || hasCategoria) {
+            cats.add(href)
+          }
+        }
+      })
+      
+      // Se não encontrou nada, pegar TODOS os links do menu
+      if (cats.size === 0) {
+        const seletores = ['nav a', '.menu a', 'header a']
+        seletores.forEach(seletor => {
           const links = document.querySelectorAll(seletor)
           links.forEach(link => {
             let href = link.href
             if (!href || !href.startsWith(baseUrl)) return
-            if (href.includes('#') || href.includes('-p')) return
-            if (href.includes('goto') || href.includes('login') || href.includes('conta')) return
-            if (href.includes('.php') || href.includes('logoff') || href.includes('cart')) return
-            if (href.includes('contato') || href.includes('sobre') || href.includes('blog')) return
-            if (href.includes('wishlist') || href.includes('compare') || href.includes('checkout')) return
-            if (href.includes('politica') || href.includes('termos') || href.includes('privacidade')) return
-            
+            if (href.includes('#') || href.includes('login') || href.includes('conta')) return
             href = href.split('?')[0].replace(/\/$/, '')
-            
             if (href !== baseUrl && href.length > baseUrl.length + 2) {
               cats.add(href)
             }
           })
-        } catch (e) {}
-      })
+        })
+      }
       
       return Array.from(cats)
     }, urlBase)
 
     console.log(`📋 ${categoriasIniciais.length} categorias iniciais encontradas`)
+    
+    // DEBUG: Mostrar algumas categorias
+    if (categoriasIniciais.length > 0) {
+      console.log('Exemplos:', categoriasIniciais.slice(0, 3).join(', '))
+    }
 
     // Mapear recursivamente subcategorias
     const todasCategorias = []
     const categoriasVisitadas = new Set()
     const categoriasParaMapear = [...categoriasIniciais]
+    
+    // FALLBACK: Se não encontrou categorias, usar a URL base
+    if (categoriasParaMapear.length === 0) {
+      console.log('⚠️ Nenhuma categoria encontrada, usando URL base como categoria')
+      categoriasParaMapear.push(urlBase)
+    }
+    
     let nivel = 0
     const MAX_NIVEIS = 10
 
@@ -136,8 +167,9 @@ async function crawlerCompleto({ concorrenteId, urlBase, tenantId, supabaseUrl, 
             links.forEach(link => {
               let href = link.href
               if (!href || !href.startsWith(baseUrl)) return
-              if (href.includes('#') || href.includes('-p')) return
-              if (href.includes('goto') || href.includes('login') || href.includes('conta')) return
+              if (href.includes('#')) return
+              if (href.includes('login') || href.includes('conta') || href.includes('minha-conta')) return
+              if (href.includes('carrinho') || href.includes('checkout')) return
               if (href.includes('.php') || href.includes('logoff')) return
               
               href = href.split('?')[0].replace(/\/$/, '')
@@ -168,6 +200,17 @@ async function crawlerCompleto({ concorrenteId, urlBase, tenantId, supabaseUrl, 
     }
 
     console.log(`✅ ${todasCategorias.length} categorias mapeadas`)
+    
+    // DEBUG: Mostrar todas as categorias encontradas
+    if (todasCategorias.length > 0) {
+      console.log('Categorias mapeadas:')
+      todasCategorias.slice(0, 10).forEach((cat, i) => {
+        console.log(`  ${i + 1}. ${cat}`)
+      })
+      if (todasCategorias.length > 10) {
+        console.log(`  ... e mais ${todasCategorias.length - 10} categorias`)
+      }
+    }
 
     // ========================================================================
     // FASE 2: EXTRAIR PRODUTOS DE CADA CATEGORIA
@@ -211,7 +254,7 @@ async function crawlerCompleto({ concorrenteId, urlBase, tenantId, supabaseUrl, 
             break
           }
 
-          // Extrair URLs de produtos - DETECÇÃO AUTOMÁTICA POR SITE
+          // Extrair URLs de produtos - MÉTODO MAIS ROBUSTO
           const urlsProdutos = await page.evaluate((urlBase) => {
             const urls = new Set()
             
@@ -231,43 +274,76 @@ async function crawlerCompleto({ concorrenteId, urlBase, tenantId, supabaseUrl, 
                 urls.add(url)
               }
             } else if (isLord) {
-              // LORD: Busca por links em elementos de produto
-              const seletoresProduto = [
-                '.product-item a',
-                '.product a',
-                '[data-product] a',
-                '.item-product a',
-                '.produto a',
-                'li[itemtype*="Product"] a',
-                '.showcase-item a',
-                '[class*="product"] a[href*="/"]'
-              ]
+              // LORD: Método mais agressivo - busca todos os links com imagem ou preço
+              const todosLinks = document.querySelectorAll('a')
+              todosLinks.forEach(link => {
+                const href = link.href
+                if (!href || !href.startsWith('http')) return
+                
+                // Filtrar URLs que NÃO são produtos
+                if (href.includes('/c/') ||
+                    href.includes('/categoria') ||
+                    href.includes('/minha-conta') ||
+                    href.includes('/carrinho') ||
+                    href.includes('/checkout') ||
+                    href.includes('/sobre') ||
+                    href.includes('/contato') ||
+                    href.includes('/blog') ||
+                    href.includes('?pagina=') ||
+                    href.includes('solicite-assistencia') ||
+                    href.includes('troca-e-devolucao') ||
+                    href.includes('atendimento') ||
+                    href.includes('novidades') ||
+                    href.includes('cdn-cgi') ||
+                    href.includes('#') ||
+                    href === window.location.href) {
+                  return
+                }
+                
+                // Verificar se o link tem imagem ou preço próximo (indicativo de produto)
+                const parent = link.closest('li, div, article')
+                if (parent) {
+                  const temImagem = parent.querySelector('img')
+                  const temPreco = parent.textContent.includes('R$')
+                  
+                  // Se tem imagem OU preço, provavelmente é um produto
+                  if (temImagem || temPreco) {
+                    urls.add(href)
+                  }
+                }
+              })
               
-              seletoresProduto.forEach(seletor => {
-                try {
-                  const links = document.querySelectorAll(seletor)
-                  links.forEach(link => {
-                    let url = link.href
-                    if (url && url.startsWith('http')) {
-                      // Filtrar apenas URLs que parecem ser de produtos
-                      if (!url.includes('/c/') && 
+              // Se não encontrou nada, tentar seletores específicos
+              if (urls.size === 0) {
+                const seletoresProduto = [
+                  '.product-item a',
+                  '.product a',
+                  '.products li a',
+                  'ul.products li a',
+                  '[data-product] a',
+                  '.item-product a',
+                  '.produto a',
+                  'li[itemtype*="Product"] a',
+                  '.showcase-item a',
+                  '[class*="product"] a',
+                  '.woocommerce-LoopProduct-link'
+                ]
+                
+                seletoresProduto.forEach(seletor => {
+                  try {
+                    const links = document.querySelectorAll(seletor)
+                    links.forEach(link => {
+                      const url = link.href
+                      if (url && url.startsWith('http') && 
+                          !url.includes('/c/') && 
                           !url.includes('/categoria') &&
-                          !url.includes('/sobre') &&
-                          !url.includes('/contato') &&
-                          !url.includes('/blog') &&
-                          !url.includes('?pagina=') &&
-                          !url.includes('solicite-assistencia') &&
-                          !url.includes('troca-e-devolucao') &&
-                          !url.includes('atendimento') &&
-                          !url.includes('novidades') &&
-                          !url.includes('cdn-cgi') &&
                           url !== window.location.href) {
                         urls.add(url)
                       }
-                    }
-                  })
-                } catch (e) {}
-              })
+                    })
+                  } catch (e) {}
+                })
+              }
             } else {
               // GENÉRICO: Tenta ambos os métodos
               // Método 1: Regex
@@ -306,6 +382,14 @@ async function crawlerCompleto({ concorrenteId, urlBase, tenantId, supabaseUrl, 
             
             return Array.from(urls)
           }, urlBase)
+
+          // DEBUG: Mostrar quantos produtos foram encontrados
+          if (pagina === 1) {
+            console.log(`   Encontrados ${urlsProdutos.length} produtos na página ${pagina}`)
+            if (urlsProdutos.length > 0) {
+              console.log(`   Exemplo: ${urlsProdutos[0]}`)
+            }
+          }
 
           if (urlsProdutos.length === 0) break
 
