@@ -37,6 +37,34 @@ async function crawlerCompleto({ concorrenteId, urlBase, tenantId, supabaseUrl, 
     })
 
     // ========================================================================
+    // LOGIN (se for Lord Distribuidor)
+    // ========================================================================
+    if (urlBase.includes('lordistribuidor.com.br')) {
+      console.log('🔐 Detectado Lord - Fazendo login...')
+      try {
+        await page.goto('https://lordistribuidor.com.br/minha-conta', { waitUntil: 'domcontentloaded', timeout: 60000 })
+        await new Promise(r => setTimeout(r, 3000))
+        
+        await page.type('#username', 'projetofabiano1512@gmail.com')
+        await page.type('#password', '151295')
+        
+        await page.evaluate(() => {
+          const buttons = Array.from(document.querySelectorAll('button, input[type="submit"]'))
+          const loginButton = buttons.find(btn => 
+            btn.textContent?.toLowerCase().includes('entrar') ||
+            btn.value?.toLowerCase().includes('entrar')
+          )
+          if (loginButton) loginButton.click()
+        })
+        
+        await new Promise(r => setTimeout(r, 3000))
+        console.log('✅ Login realizado')
+      } catch (e) {
+        console.log('⚠️ Erro no login, continuando sem autenticação:', e.message)
+      }
+    }
+
+    // ========================================================================
     // FASE 1: MAPEAR TODAS AS CATEGORIAS
     // ========================================================================
     console.log('📂 FASE 1: Mapeando TODAS as categorias...')
