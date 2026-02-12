@@ -41,10 +41,14 @@ ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 ENV NODE_ENV=production
 ENV PORT=3001
+ENV CHROME_DEVEL_SANDBOX=/usr/lib/chromium/chrome-sandbox
+ENV DISABLE_CRASHPAD=1
 
 # Criar usuário não-root para segurança
 RUN groupadd -r crawler && useradd -r -g crawler crawler \
-    && chown -R crawler:crawler /app
+    && chown -R crawler:crawler /app \
+    && mkdir -p /tmp/.X11-unix \
+    && chmod 1777 /tmp/.X11-unix
 
 USER crawler
 

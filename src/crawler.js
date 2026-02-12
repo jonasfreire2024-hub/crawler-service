@@ -44,7 +44,9 @@ async function crawlerCompleto({ concorrenteId, urlBase, tenantId, supabaseUrl, 
         '--no-zygote',
         '--single-process',
         '--disable-crash-reporter',
-        '--disable-breakpad'
+        '--disable-breakpad',
+        '--crash-dumps-dir=/tmp',
+        '--enable-crashpad=false'
       )
     }
     // No Windows/Mac, deixar Puppeteer usar o Chrome baixado automaticamente

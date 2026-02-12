@@ -25,7 +25,14 @@ async function crawlerRapido({ concorrenteId, urlBase, tenantId, supabaseUrl, su
     
     if (process.platform === 'linux') {
       launchOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium-browser'
-      launchOptions.args.push('--no-zygote', '--single-process')
+      launchOptions.args.push(
+        '--no-zygote',
+        '--single-process',
+        '--disable-crash-reporter',
+        '--disable-breakpad',
+        '--crash-dumps-dir=/tmp',
+        '--enable-crashpad=false'
+      )
     }
     
     browser = await puppeteer.launch(launchOptions)
