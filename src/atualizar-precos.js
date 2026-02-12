@@ -79,11 +79,75 @@ async function atualizarPrecos({ concorrenteId, tenantId, supabaseUrl, supabaseK
         
         await new Promise(r => setTimeout(r, 500))
 
-        const dados = await page.evaluate(() => {
+        const dados = await page.evaluate((url) => {
           let preco = 0
+          let preco_original = 0
           let estoque = null
           let disponivel = true
 
+          // Detectar se é Lord (WooCommerce)
+          const isLord = url.includes('lord') || url.includes('lordistribuidor')
+          
+          if (isLord) {
+            // LÓGICA ESPECÍFICA PARA LORD (WooCommerce)
+            // Preços - WooCommerce usa del (preço original) e ins (preço promocional)
+            const precoPromocional = document.querySelector('.price ins .woocommerce-Price-amount bdi')
+            const precoOriginalEl = document.querySelector('.price del .woocommerce-Price-amount bdi')
+            
+            if (precoPromocional) {
+              const match = precoPromocional.textContent?.match(/R\$\s*([0-9]{1,3}(?:\.[0-9]{3})*(?:,\d{2})?)/)
+              if (match) {
+                preco = parseFloat(match[1].replace(/\./g, '').replace(',', '.'))
+              }
+            }
+            
+            if (precoOriginalEl) {
+              const match = precoOriginalEl.textContent?.match(/R\$\s*([0-9]{1,3}(?:\.[0-9]{3})*(?:,\d{2})?)/)
+              if (match) {
+                preco_original = parseFloat(match[1].replace(/\./g, '').replace(',', '.'))
+              }
+            }
+            
+            // Se não tem preço promocional, usar o preço normal
+            if (!preco && precoOriginalEl) {
+              preco = preco_original
+              preco_original = 0
+            }
+            
+            // Se ainda não tem preço, tentar pegar qualquer preço
+            if (!preco) {
+              const qualquerPreco = document.querySelector('.price .woocommerce-Price-amount bdi')
+              if (qualquerPreco) {
+                const match = qualquerPreco.textContent?.match(/R\$\s*([0-9]{1,3}(?:\.[0-9]{3})*(?:,\d{2})?)/)
+                if (match) {
+                  preco = parseFloat(match[1].replace(/\./g, '').replace(',', '.'))
+                }
+              }
+            }
+            
+            // Estoque - Buscar no HTML completo
+            const htmlCompleto = document.documentElement.outerHTML
+            const matchEstoque = htmlCompleto.match(/Em estoque[:\s]*(\d+)/i)
+            if (matchEstoque) {
+              estoque = parseInt(matchEstoque[1])
+              disponivel = true
+            }
+            
+            // Verificar disponibilidade no schema.org
+            if (htmlCompleto.includes('OutOfStock')) {
+              disponivel = false
+              estoque = 0
+            } else if (htmlCompleto.includes('InStock')) {
+              disponivel = true
+              if (estoque === null) {
+                estoque = 1
+              }
+            }
+            
+            return { preco, preco_original, estoque, disponivel }
+          }
+
+          // LÓGICA GENÉRICA PARA OUTROS SITES
           const areaProduto = document.querySelector('.product-details-content, article[itemtype*="Product"]')
           
           // Meta tag (mais confiável)
@@ -181,7 +245,7 @@ async function atualizarPrecos({ concorrenteId, tenantId, supabaseUrl, supabaseK
           }
 
           return { preco, estoque, disponivel }
-        })
+        }, produto.url)
 
         if (dados.preco > 0) {
           const precoAnterior = produto.preco || 0
@@ -193,6 +257,8 @@ async function atualizarPrecos({ concorrenteId, tenantId, supabaseUrl, supabaseK
 
           const dadosAtualizacao = {
             preco: dados.preco,
+            preco_pix: dados.preco,
+            preco_normal: dados.preco_original || dados.preco,
             preco_anterior: precoAnterior,
             estoque: dados.estoque,
             estoque_anterior: estoqueAnterior,
