@@ -260,8 +260,8 @@ async function crawlerCompleto({ concorrenteId, urlBase, tenantId, supabaseUrl, 
         while (pagina <= 50) { // Limite de 50 páginas por categoria
           try {
             const urlPagina = pagina === 1 ? urlCategoria : `${urlCategoria}?pagina=${pagina}`
-            await page.goto(urlPagina, { waitUntil: 'domcontentloaded', timeout: 30000 })
-            await new Promise(r => setTimeout(r, 300))
+            await page.goto(urlPagina, { waitUntil: 'networkidle2', timeout: 30000 })
+            await new Promise(r => setTimeout(r, 2000)) // Aguardar mais tempo para JS carregar
           } catch (e) {
             break
           }
@@ -286,79 +286,14 @@ async function crawlerCompleto({ concorrenteId, urlBase, tenantId, supabaseUrl, 
                 urls.add(url)
               }
             } else if (isLord) {
-              // LORD: Usar seletores WooCommerce
-              const urls = new Set()
-              
-              // Seletores específicos do WooCommerce (que o Lord usa)
-              const seletoresProduto = [
-                '.products .product a.woocommerce-LoopProduct-link',
-                'ul.products li.product > a',
-                '.products li.product a:first-child',
-                'li.product > a[href*="/produto/"]'
-              ]
-              
-              seletoresProduto.forEach(seletor => {
-                try {
-                  const links = document.querySelectorAll(seletor)
-                  links.forEach(link => {
-                    let href = link.href
-                    if (!href || !href.startsWith('http')) return
-                    
-                    // Limpar URL
-                    href = href.split('?')[0].split('#')[0].replace(/\/$/, '')
-                    
-                    // Filtrar URLs externas
-                    if (href.includes('whatsapp.com') ||
-                        href.includes('facebook.com') ||
-                        href.includes('instagram.com') ||
-                        href.includes('api.whatsapp')) {
-                      return
-                    }
-                    
-                    // Adicionar se tiver /produto/ ou se for um link de produto válido
-                    if (href.includes('/produto/') || 
-                        (href !== window.location.href && 
-                         !href.includes('/c/') && 
-                         !href.includes('/categoria'))) {
-                      urls.add(href)
-                    }
-                  })
-                } catch (e) {}
+              // LORD: Buscar links com /produto/
+              document.querySelectorAll('a[href*="/produto/"]').forEach(link => {
+                let href = link.href
+                if (href) {
+                  href = href.split('?')[0].split('#')[0].replace(/\/$/, '')
+                  urls.add(href)
+                }
               })
-              
-              return Array.from(urls)
-              
-              // Se não encontrou nada, tentar seletores específicos
-              if (urls.size === 0) {
-                const seletoresProduto = [
-                  '.product-item a',
-                  '.product a',
-                  '.products li a',
-                  'ul.products li a',
-                  '[data-product] a',
-                  '.item-product a',
-                  '.produto a',
-                  'li[itemtype*="Product"] a',
-                  '.showcase-item a',
-                  '[class*="product"] a',
-                  '.woocommerce-LoopProduct-link'
-                ]
-                
-                seletoresProduto.forEach(seletor => {
-                  try {
-                    const links = document.querySelectorAll(seletor)
-                    links.forEach(link => {
-                      const url = link.href
-                      if (url && url.startsWith('http') && 
-                          !url.includes('/c/') && 
-                          !url.includes('/categoria') &&
-                          url !== window.location.href) {
-                        urls.add(url)
-                      }
-                    })
-                  } catch (e) {}
-                })
-              }
             } else {
               // GENÉRICO: Tenta ambos os métodos
               // Método 1: Regex
@@ -422,116 +357,83 @@ async function crawlerCompleto({ concorrenteId, urlBase, tenantId, supabaseUrl, 
               await page.goto(urlProd, { waitUntil: 'domcontentloaded', timeout: 20000 })
               await new Promise(r => setTimeout(r, 200))
 
-              // EXTRAIR DADOS - MESMA LÓGICA DO BOTÃO DETALHADO
+              // EXTRAIR DADOS - LÓGICA OTIMIZADA PARA LORD
               const dados = await page.evaluate(() => {
                 const resultado = {
                   nome: '',
-                  marca: '',
-                  categoria: '',
-                  sku: '',
-                  preco_normal: null,
-                  preco_pix: null,
+                  preco: 0,
+                  preco_original: 0,
                   imagem: '',
-                  descricao: '',
                   disponibilidade: 'disponível',
                   estoque: null
                 }
-
-                // Buscar na área do produto principal
-                const areaProduto = document.querySelector('.product-details-content, article[itemtype*="Product"]')
                 
-                if (!areaProduto) {
-                  return { erro: 'Área do produto não encontrada' }
-                }
-
-                // NOME
-                const nomeEl = areaProduto.querySelector('h1, [itemprop="name"]')
-                if (nomeEl) resultado.nome = nomeEl.textContent.trim()
-
-                // MARCA
-                const marcasConhecidas = ['Art Assentos', 'Carioca', 'D Doro', 'JB Bechara', 'Tebarrot', 'Rud Rack', 'ACP', 'Anjos', 'Ortobom', 'Poquema', 'Minas Plac', 'KM Decor']
-                for (const marca of marcasConhecidas) {
-                  if (resultado.nome.includes(marca)) {
-                    resultado.marca = marca
-                    break
+                // Nome
+                const h1 = document.querySelector('h1.product_title')
+                if (h1) resultado.nome = h1.textContent?.trim()
+                
+                // Preços - WooCommerce usa del (preço original) e ins (preço promocional)
+                const precoPromocional = document.querySelector('.price ins .woocommerce-Price-amount bdi')
+                const precoOriginal = document.querySelector('.price del .woocommerce-Price-amount bdi')
+                
+                if (precoPromocional) {
+                  const match = precoPromocional.textContent?.match(/R\$\s*([0-9]{1,3}(?:\.[0-9]{3})*(?:,\d{2})?)/)
+                  if (match) {
+                    resultado.preco = parseFloat(match[1].replace(/\./g, '').replace(',', '.'))
                   }
                 }
                 
-                if (!resultado.marca) {
-                  const fabricanteLink = areaProduto.querySelector('.produto_fabricante a')
-                  if (fabricanteLink) {
-                    resultado.marca = fabricanteLink.title || fabricanteLink.textContent.trim()
+                if (precoOriginal) {
+                  const match = precoOriginal.textContent?.match(/R\$\s*([0-9]{1,3}(?:\.[0-9]{3})*(?:,\d{2})?)/)
+                  if (match) {
+                    resultado.preco_original = parseFloat(match[1].replace(/\./g, '').replace(',', '.'))
                   }
                 }
-
-                // SKU
-                const skuEl = areaProduto.querySelector('[itemprop="sku"], #produto_cod_ref')
-                if (skuEl) resultado.sku = skuEl.textContent.trim()
-
-                // PREÇOS
-                const areaPrecos = areaProduto.querySelector('.product-values, .product-price, .price-detail-fixed')
                 
-                if (areaPrecos) {
-                  const precoNormalEl = areaPrecos.querySelector('.price[data-element="sale-price"] p, .price p')
-                  if (precoNormalEl) {
-                    const match = precoNormalEl.textContent.match(/R\$\s*([0-9]{1,3}(?:\.[0-9]{3})*(?:,[0-9]{2})?)/)
+                // Se não tem preço promocional, usar o preço normal
+                if (!resultado.preco && precoOriginal) {
+                  resultado.preco = resultado.preco_original
+                  resultado.preco_original = 0
+                }
+                
+                // Se ainda não tem preço, tentar pegar qualquer preço
+                if (!resultado.preco) {
+                  const qualquerPreco = document.querySelector('.price .woocommerce-Price-amount bdi')
+                  if (qualquerPreco) {
+                    const match = qualquerPreco.textContent?.match(/R\$\s*([0-9]{1,3}(?:\.[0-9]{3})*(?:,\d{2})?)/)
                     if (match) {
-                      resultado.preco_normal = parseFloat(match[1].replace(/\./g, '').replace(',', '.'))
-                    }
-                  }
-                  
-                  const precoDescontoEl = areaPrecos.querySelector('.best-price')
-                  if (precoDescontoEl) {
-                    const match = precoDescontoEl.textContent.match(/R\$\s*([0-9]{1,3}(?:\.[0-9]{3})*(?:,[0-9]{2})?)/)
-                    if (match) {
-                      resultado.preco_pix = parseFloat(match[1].replace(/\./g, '').replace(',', '.'))
+                      resultado.preco = parseFloat(match[1].replace(/\./g, '').replace(',', '.'))
                     }
                   }
                 }
-
-                if (resultado.preco_normal && !resultado.preco_pix) {
-                  resultado.preco_pix = resultado.preco_normal
-                }
-
-                // IMAGEM
-                const galeriaImagens = areaProduto.querySelectorAll('.product-gallery img, .gallery-thumbs img, [class*="product-image"] img')
-                if (galeriaImagens.length > 0) {
-                  for (const img of galeriaImagens) {
-                    if (img.src && img.src.startsWith('http') && !img.src.includes('thumb_') && !img.src.includes('logo')) {
-                      resultado.imagem = img.src
-                      break
-                    }
-                  }
-                }
-
-                // DESCRIÇÃO
-                const descTabs = areaProduto.querySelector('.description_tabs')
-                if (descTabs) {
-                  const clone = descTabs.cloneNode(true)
-                  clone.querySelectorAll('script, style, label, input, button').forEach(e => e.remove())
-                  resultado.descricao = clone.textContent.trim().replace(/\s+/g, ' ').substring(0, 1000)
-                }
-
-                // DISPONIBILIDADE E ESTOQUE
-                const textoCompleto = areaProduto.textContent.toLowerCase()
                 
-                if (textoCompleto.includes('em estoque')) {
+                // Imagem
+                const img = document.querySelector('.wp-post-image, .woocommerce-product-gallery__image img')
+                if (img) resultado.imagem = img.src
+                
+                // Estoque - Buscar no HTML completo
+                const htmlCompleto = document.documentElement.outerHTML
+                const matchEstoque = htmlCompleto.match(/Em estoque[:\s]*(\d+)/i)
+                if (matchEstoque) {
+                  resultado.estoque = parseInt(matchEstoque[1])
                   resultado.disponibilidade = 'disponível'
-                } else if (textoCompleto.includes('indisponível') || textoCompleto.includes('esgotado')) {
-                  resultado.disponibilidade = 'indisponível'
                 }
                 
-                const estoqueMatch = textoCompleto.match(/quantidade em estoque[:\s]+(\d+)/i)
-                if (estoqueMatch) {
-                  resultado.estoque = parseInt(estoqueMatch[1])
+                // Verificar disponibilidade no schema.org
+                if (htmlCompleto.includes('OutOfStock')) {
+                  resultado.disponibilidade = 'indisponível'
+                  resultado.estoque = 0
+                } else if (htmlCompleto.includes('InStock')) {
+                  resultado.disponibilidade = 'disponível'
+                  if (resultado.estoque === null) {
+                    resultado.estoque = 1 // Assume pelo menos 1 se está em estoque
+                  }
                 }
-
+                
                 return resultado
               })
 
-              if (dados.erro) continue
-
-              if (dados.nome && (dados.preco_normal > 0 || dados.preco_pix > 0)) {
+              if (dados.nome && dados.preco > 0) {
                 produtosMap.set(urlProd, {
                   ...dados,
                   url: urlProd,
@@ -564,21 +466,16 @@ async function crawlerCompleto({ concorrenteId, urlBase, tenantId, supabaseUrl, 
                 tenant_id: tenantId,
                 concorrente_id: concorrenteId,
                 nome: p.nome,
-                preco: p.preco_normal || p.preco_pix,
-                preco_pix: p.preco_pix,
-                preco_normal: p.preco_normal,
+                preco: p.preco, // Usar preço promocional (ou normal se não tiver promoção)
                 url: p.url,
                 imagem_url: p.imagem,
                 categoria: p.categoria,
-                descricao: p.descricao,
-                sku: p.sku,
-                marca: p.marca,
                 disponibilidade: p.disponibilidade,
                 estoque: p.estoque,
                 ativo: true,
                 ultima_coleta: new Date().toISOString()
               })),
-              { onConflict: 'url', ignoreDuplicates: false }
+              { onConflict: 'url' }
             )
 
           if (!error) {
