@@ -1,6 +1,6 @@
 FROM node:20-slim
 
-# Instalar dependências do Chromium
+# Instalar dependências do Chromium e ferramentas de debug
 RUN apt-get update && apt-get install -y \
     chromium \
     chromium-sandbox \
@@ -23,6 +23,7 @@ RUN apt-get update && apt-get install -y \
     libxkbcommon0 \
     libxrandr2 \
     xdg-utils \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Definir diretório de trabalho
@@ -35,12 +36,24 @@ RUN npm ci --only=production
 # Copiar código
 COPY . .
 
-# Variável de ambiente para o Puppeteer
+# Variáveis de ambiente
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+ENV NODE_ENV=production
+ENV PORT=3001
+
+# Criar usuário não-root para segurança
+RUN groupadd -r crawler && useradd -r -g crawler crawler \
+    && chown -R crawler:crawler /app
+
+USER crawler
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+  CMD curl -f http://localhost:3001/health || exit 1
 
 # Expor porta
 EXPOSE 3001
 
-# Comando para iniciar
-CMD ["node", "src/index.js"]
+# Comando para iniciar com logs detalhados
+CMD ["node", "start.js"]

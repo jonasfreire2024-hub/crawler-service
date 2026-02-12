@@ -1,11 +1,14 @@
 const puppeteer = require('puppeteer')
 const { createClient } = require('@supabase/supabase-js')
 
-async function crawlerCompleto({ concorrenteId, urlBase, tenantId, supabaseUrl, supabaseKey }) {
+async function crawlerCompleto({ concorrenteId, urlBase, tenantId, supabaseUrl, supabaseKey, testeRapido = false }) {
   const supabase = createClient(supabaseUrl, supabaseKey)
   let browser = null
 
   try {
+    if (testeRapido) {
+      console.log('🧪 TESTE RÁPIDO - Processando apenas 1 categoria')
+    }
     console.log('🚀 Iniciando crawler COMPLETO para:', urlBase)
 
     // Configuração do browser baseada no sistema operacional
@@ -242,11 +245,17 @@ async function crawlerCompleto({ concorrenteId, urlBase, tenantId, supabaseUrl, 
     }
     console.log(`📋 ${urlsJaSalvas.size} produtos já existentes no banco`)
 
-    for (let i = 0; i < todasCategorias.length; i++) {
-      const urlCategoria = todasCategorias[i]
+    // Limitar a 1 categoria se for teste rápido
+    const categoriasParaProcessar = testeRapido ? todasCategorias.slice(0, 1) : todasCategorias
+    if (testeRapido) {
+      console.log(`🧪 TESTE RÁPIDO: Processando apenas a primeira categoria`)
+    }
+
+    for (let i = 0; i < categoriasParaProcessar.length; i++) {
+      const urlCategoria = categoriasParaProcessar[i]
       const nomeCategoria = urlCategoria.replace(urlBase, '') || '/'
       
-      console.log(`[${i + 1}/${todasCategorias.length}] 📂 ${nomeCategoria}`)
+      console.log(`[${i + 1}/${categoriasParaProcessar.length}] 📂 ${nomeCategoria}`)
 
       try {
         let pagina = 1
@@ -281,64 +290,47 @@ async function crawlerCompleto({ concorrenteId, urlBase, tenantId, supabaseUrl, 
                 urls.add(url)
               }
             } else if (isLord) {
-              // LORD: Produtos têm /produto/ na URL
-              const todosLinks = document.querySelectorAll('a')
-              todosLinks.forEach(link => {
-                let href = link.href
-                if (!href || !href.startsWith('http')) return
-                
-                // Limpar URL
-                href = href.split('?')[0].split('#')[0].replace(/\/$/, '')
-                
-                // Filtrar URLs externas (WhatsApp, redes sociais, etc)
-                if (href.includes('whatsapp.com') ||
-                    href.includes('facebook.com') ||
-                    href.includes('instagram.com') ||
-                    href.includes('youtube.com') ||
-                    href.includes('twitter.com') ||
-                    href.includes('api.whatsapp')) {
-                  return
-                }
-                
-                // LORD: Produtos sempre têm /produto/ na URL
-                if (href.includes('/produto/')) {
-                  urls.add(href)
-                  return
-                }
-                
-                // Fallback: Se não tem /produto/, verificar contexto
-                // Filtrar URLs que NÃO são produtos
-                if (href === urlBase || 
-                    href === window.location.href ||
-                    href.includes('/c/') ||
-                    href.includes('/categoria') ||
-                    href.includes('/minha-conta') ||
-                    href.includes('/carrinho') ||
-                    href.includes('/checkout') ||
-                    href.includes('/sobre') ||
-                    href.includes('/contato') ||
-                    href.includes('/blog') ||
-                    href.includes('?pagina=') ||
-                    href.includes('solicite-assistencia') ||
-                    href.includes('troca-e-devolucao') ||
-                    href.includes('atendimento') ||
-                    href.includes('novidades') ||
-                    href.includes('cdn-cgi') ||
-                    href.includes('promocoes')) {
-                  return
-                }
-                
-                // Verificar se o link tem imagem ou preço próximo
-                const parent = link.closest('li, div, article')
-                if (parent) {
-                  const temImagem = parent.querySelector('img')
-                  const temPreco = parent.textContent.includes('R$')
-                  
-                  if (temImagem || temPreco) {
-                    urls.add(href)
-                  }
-                }
+              // LORD: Usar seletores WooCommerce
+              const urls = new Set()
+              
+              // Seletores específicos do WooCommerce (que o Lord usa)
+              const seletoresProduto = [
+                '.products .product a.woocommerce-LoopProduct-link',
+                'ul.products li.product > a',
+                '.products li.product a:first-child',
+                'li.product > a[href*="/produto/"]'
+              ]
+              
+              seletoresProduto.forEach(seletor => {
+                try {
+                  const links = document.querySelectorAll(seletor)
+                  links.forEach(link => {
+                    let href = link.href
+                    if (!href || !href.startsWith('http')) return
+                    
+                    // Limpar URL
+                    href = href.split('?')[0].split('#')[0].replace(/\/$/, '')
+                    
+                    // Filtrar URLs externas
+                    if (href.includes('whatsapp.com') ||
+                        href.includes('facebook.com') ||
+                        href.includes('instagram.com') ||
+                        href.includes('api.whatsapp')) {
+                      return
+                    }
+                    
+                    // Adicionar se tiver /produto/ ou se for um link de produto válido
+                    if (href.includes('/produto/') || 
+                        (href !== window.location.href && 
+                         !href.includes('/c/') && 
+                         !href.includes('/categoria'))) {
+                      urls.add(href)
+                    }
+                  })
+                } catch (e) {}
               })
+              
+              return Array.from(urls)
               
               // Se não encontrou nada, tentar seletores específicos
               if (urls.size === 0) {
