@@ -14,16 +14,27 @@ async function crawlerCompleto({ concorrenteId, urlBase, tenantId, supabaseUrl, 
 
     // Usar @sparticuz/chromium - funciona perfeitamente no Railway
     browser = await puppeteer.launch({
-      args: chromium.args,
+      args: [
+        ...chromium.args,
+        '--disable-blink-features=AutomationControlled', // Esconder que é bot
+        '--disable-features=IsolateOrigins,site-per-process'
+      ],
       defaultViewport: chromium.defaultViewport,
       executablePath: await chromium.executablePath(),
-      headless: chromium.headless
+      headless: chromium.headless,
+      ignoreHTTPSErrors: true
     })
     console.log('✅ Puppeteer iniciado')
 
     let page = await browser.newPage()
     page.setDefaultNavigationTimeout(60000)
-    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36')
+    
+    // Esconder que é um bot
+    await page.evaluateOnNewDocument(() => {
+      Object.defineProperty(navigator, 'webdriver', { get: () => false })
+    })
+    
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
 
     // NÃO bloquear recursos - pode causar problemas com JavaScript
 
