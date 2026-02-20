@@ -39,9 +39,7 @@ async function crawlerCompleto({ concorrenteId, urlBase, tenantId, supabaseUrl, 
     // NÃO bloquear recursos - pode causar problemas com JavaScript
 
     // ========================================================================
-    // LOGIN (se for Lord Distribuidor)
-    // ========================================================================
-    // LOGIN (se for Lord Distribuidor)
+    // LOGIN (se for Lord Distribuidor ou Total Distribuição)
     // ========================================================================
     if (urlBase.includes('lordistribuidor.com.br')) {
       console.log('🔐 Detectado Lord - Fazendo login...')
@@ -68,6 +66,34 @@ async function crawlerCompleto({ concorrenteId, urlBase, tenantId, supabaseUrl, 
         } else {
           console.log('✅ Já estava logado')
         }
+      } catch (e) {
+        console.log('⚠️ Erro no login, continuando sem autenticação:', e.message)
+      }
+    } else if (urlBase.includes('totaldistribuicaorj.com.br')) {
+      console.log('🔐 Detectado Total Distribuição - Fazendo login...')
+      try {
+        await page.goto('https://totaldistribuicaorj.com.br/Login', { 
+          waitUntil: 'domcontentloaded', 
+          timeout: 30000 
+        })
+        await new Promise(r => setTimeout(r, 3000))
+        
+        // Preencher formulário específico da Total
+        await page.type('#forminator-field-text-1_6998e35da96bd', '45281091000119', { delay: 50 })
+        await page.type('#forminator-field-password-1_6998e35da96bd', '45281', { delay: 50 })
+        
+        // Clicar no botão de login
+        await page.evaluate(() => {
+          const buttons = Array.from(document.querySelectorAll('button'))
+          const loginButton = buttons.find(btn => 
+            btn.textContent?.toLowerCase().includes('entrar') ||
+            btn.textContent?.toLowerCase().includes('login')
+          )
+          if (loginButton) loginButton.click()
+        })
+        
+        await new Promise(r => setTimeout(r, 5000))
+        console.log('✅ Login realizado')
       } catch (e) {
         console.log('⚠️ Erro no login, continuando sem autenticação:', e.message)
       }
@@ -276,6 +302,7 @@ async function crawlerCompleto({ concorrenteId, urlBase, tenantId, supabaseUrl, 
             // Detectar tipo de site
             const isRufer = urlBase.includes('rufer') || urlBase.includes('rufermoveis')
             const isLord = urlBase.includes('lord') || urlBase.includes('lorddistribuidor')
+            const isTotal = urlBase.includes('totaldistribuicaorj')
             
             if (isRufer) {
               // RUFER: Usa padrão -p seguido de números
@@ -288,14 +315,31 @@ async function crawlerCompleto({ concorrenteId, urlBase, tenantId, supabaseUrl, 
                 }
                 urls.add(url)
               }
-            } else if (isLord) {
-              // LORD: Buscar links com /produto/
-              document.querySelectorAll('a[href*="/produto/"]').forEach(link => {
-                let href = link.href
-                if (href) {
-                  href = href.split('?')[0].split('#')[0].replace(/\/$/, '')
-                  urls.add(href)
-                }
+            } else if (isLord || isTotal) {
+              // LORD e TOTAL: WooCommerce - Buscar links com /produto/
+              const seletoresProduto = [
+                '.product-small a',
+                '.product a',
+                'li.product a',
+                'ul.products li a',
+                '.woocommerce-LoopProduct-link',
+                'a[href*="/produto/"]'
+              ]
+              
+              seletoresProduto.forEach(seletor => {
+                try {
+                  const links = document.querySelectorAll(seletor)
+                  links.forEach(link => {
+                    let url = link.href
+                    if (url && 
+                        url.startsWith(urlBase) &&
+                        url.includes('/produto/') &&
+                        !url.includes('/categoria') &&
+                        !url.includes('?')) {
+                      urls.add(url)
+                    }
+                  })
+                } catch (e) {}
               })
             } else {
               // GENÉRICO: Tenta ambos os métodos
@@ -360,7 +404,7 @@ async function crawlerCompleto({ concorrenteId, urlBase, tenantId, supabaseUrl, 
               await page.goto(urlProd, { waitUntil: 'domcontentloaded', timeout: 20000 })
               await new Promise(r => setTimeout(r, 200))
 
-              // EXTRAIR DADOS - LÓGICA OTIMIZADA PARA LORD
+              // EXTRAIR DADOS - LÓGICA OTIMIZADA PARA LORD E TOTAL
               const dados = await page.evaluate(() => {
                 const resultado = {
                   nome: '',
@@ -371,48 +415,53 @@ async function crawlerCompleto({ concorrenteId, urlBase, tenantId, supabaseUrl, 
                   estoque: null
                 }
                 
+                // Área do produto (WooCommerce)
+                const areaProduto = document.querySelector('.summary, .entry-summary, .product') || document.body
+                
                 // Nome
-                const h1 = document.querySelector('h1.product_title')
-                if (h1) resultado.nome = h1.textContent?.trim()
+                const nomeEl = areaProduto.querySelector('h1.product_title, h1, .product-title')
+                if (nomeEl) resultado.nome = nomeEl.textContent?.trim()
                 
-                // Preços - WooCommerce usa del (preço original) e ins (preço promocional)
-                const precoPromocional = document.querySelector('.price ins .woocommerce-Price-amount bdi')
-                const precoOriginal = document.querySelector('.price del .woocommerce-Price-amount bdi')
-                
-                if (precoPromocional) {
-                  const match = precoPromocional.textContent?.match(/R\$\s*([0-9]{1,3}(?:\.[0-9]{3})*(?:,\d{2})?)/)
+                // Preços - WooCommerce
+                const precoEls = areaProduto.querySelectorAll('.price .amount, .price ins .amount, .woocommerce-Price-amount, p.price, .price')
+                precoEls.forEach(el => {
+                  const texto = el.textContent
+                  const match = texto?.match(/R\$\s*([0-9]{1,3}(?:\.[0-9]{3})*(?:,\d{2})?)/)
                   if (match) {
-                    resultado.preco = parseFloat(match[1].replace(/\./g, '').replace(',', '.'))
-                  }
-                }
-                
-                if (precoOriginal) {
-                  const match = precoOriginal.textContent?.match(/R\$\s*([0-9]{1,3}(?:\.[0-9]{3})*(?:,\d{2})?)/)
-                  if (match) {
-                    resultado.preco_original = parseFloat(match[1].replace(/\./g, '').replace(',', '.'))
-                  }
-                }
-                
-                // Se não tem preço promocional, usar o preço normal
-                if (!resultado.preco && precoOriginal) {
-                  resultado.preco = resultado.preco_original
-                  resultado.preco_original = 0
-                }
-                
-                // Se ainda não tem preço, tentar pegar qualquer preço
-                if (!resultado.preco) {
-                  const qualquerPreco = document.querySelector('.price .woocommerce-Price-amount bdi')
-                  if (qualquerPreco) {
-                    const match = qualquerPreco.textContent?.match(/R\$\s*([0-9]{1,3}(?:\.[0-9]{3})*(?:,\d{2})?)/)
-                    if (match) {
-                      resultado.preco = parseFloat(match[1].replace(/\./g, '').replace(',', '.'))
+                    const preco = parseFloat(match[1].replace(/\./g, '').replace(',', '.'))
+                    if (!resultado.preco) {
+                      resultado.preco = preco
+                    } else if (preco < resultado.preco) {
+                      resultado.preco_original = resultado.preco
+                      resultado.preco = preco
+                    } else if (preco > resultado.preco) {
+                      resultado.preco_original = preco
                     }
                   }
+                })
+                
+                // Se não tem preço original, usar o preço como original
+                if (!resultado.preco_original && resultado.preco) {
+                  resultado.preco_original = resultado.preco
                 }
                 
                 // Imagem
-                const img = document.querySelector('.wp-post-image, .woocommerce-product-gallery__image img')
-                if (img) resultado.imagem = img.src
+                const imgSelectors = [
+                  '.woocommerce-product-gallery__image img',
+                  '.woocommerce-product-gallery img',
+                  '.wp-post-image',
+                  'img[itemprop="image"]',
+                  '.product-image img',
+                  '.product-gallery img'
+                ]
+                
+                for (const seletor of imgSelectors) {
+                  const img = document.querySelector(seletor)
+                  if (img && img.src && img.src.startsWith('http') && !img.src.includes('data:image')) {
+                    resultado.imagem = img.src
+                    break
+                  }
+                }
                 
                 // Estoque - Buscar no HTML completo
                 const htmlCompleto = document.documentElement.outerHTML
@@ -422,8 +471,12 @@ async function crawlerCompleto({ concorrenteId, urlBase, tenantId, supabaseUrl, 
                   resultado.disponibilidade = 'disponível'
                 }
                 
-                // Verificar disponibilidade no schema.org
-                if (htmlCompleto.includes('OutOfStock')) {
+                // Verificar disponibilidade
+                const textoCompleto = document.body.textContent.toLowerCase()
+                if (textoCompleto.includes('fora de estoque') || 
+                    textoCompleto.includes('indisponível') ||
+                    textoCompleto.includes('esgotado') ||
+                    htmlCompleto.includes('OutOfStock')) {
                   resultado.disponibilidade = 'indisponível'
                   resultado.estoque = 0
                 } else if (htmlCompleto.includes('InStock')) {
