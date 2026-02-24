@@ -97,6 +97,35 @@ async function crawlerCompleto({ concorrenteId, urlBase, tenantId, supabaseUrl, 
       } catch (e) {
         console.log('⚠️ Erro no login, continuando sem autenticação:', e.message)
       }
+    } else if (urlBase.includes('primedistribuidorj.com.br')) {
+      console.log('🔐 Detectado Prime Distribuidor - Fazendo login...')
+      try {
+        await page.goto('https://primedistribuidorj.com.br/minha-conta', { 
+          waitUntil: 'domcontentloaded', 
+          timeout: 30000 
+        })
+        await new Promise(r => setTimeout(r, 2000))
+        
+        // Verificar se já está logado
+        const jaLogado = await page.evaluate(() => {
+          return document.body.textContent.includes('Olá') || 
+                 document.body.textContent.includes('Sair') ||
+                 !document.querySelector('#username')
+        })
+        
+        if (!jaLogado) {
+          // TODO: Adicionar credenciais quando fornecidas
+          // await page.type('#username', 'SEU_EMAIL_AQUI', { delay: 50 })
+          // await page.type('#password', 'SUA_SENHA_AQUI', { delay: 50 })
+          // await page.click('button[name="login"]')
+          // await new Promise(r => setTimeout(r, 5000))
+          console.log('⚠️ Credenciais da Prime não configuradas - continuando sem login')
+        } else {
+          console.log('✅ Já estava logado')
+        }
+      } catch (e) {
+        console.log('⚠️ Erro no login, continuando sem autenticação:', e.message)
+      }
     }
 
     // ========================================================================
