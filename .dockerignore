@@ -1,8 +1,10 @@
 node_modules
 npm-debug.log
+.env
 .git
 .gitignore
 README.md
 test-*.js
 debug-*.js
-*.png
+buscar-ids.js
+*.md

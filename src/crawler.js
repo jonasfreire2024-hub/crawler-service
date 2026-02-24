@@ -383,6 +383,9 @@ async function crawlerCompleto({ concorrenteId, urlBase, tenantId, supabaseUrl, 
           // DEBUG: Mostrar quantos produtos foram encontrados
           if (pagina === 1) {
             console.log(`   Encontrados ${urlsProdutos.length} produtos na página ${pagina}`)
+            if (testeRapido && urlsProdutos.length > 10) {
+              console.log(`   🧪 TESTE RÁPIDO: Limitando a 10 produtos`)
+            }
             if (urlsProdutos.length > 0) {
               console.log(`   Exemplos:`)
               urlsProdutos.slice(0, 3).forEach(url => console.log(`     - ${url}`))
@@ -394,7 +397,10 @@ async function crawlerCompleto({ concorrenteId, urlBase, tenantId, supabaseUrl, 
           if (urlsProdutos.length === 0) break
 
           let novos = 0
-          for (const urlProd of urlsProdutos) {
+          // 🧪 Limitar a 10 produtos se for teste rápido
+          const urlsProdutosParaProcessar = testeRapido ? urlsProdutos.slice(0, 10) : urlsProdutos
+          
+          for (const urlProd of urlsProdutosParaProcessar) {
             if (urlsJaSalvas.has(urlProd) || produtosMap.has(urlProd)) {
               totalDuplicatas++
               continue
